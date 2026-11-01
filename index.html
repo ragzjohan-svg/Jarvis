@@ -356,9 +356,9 @@
       <span class="q-icon">👥</span>
       <span><div class="q-text">Contractor performance</div><div class="q-sub">All agent stats</div></span>
     </button>
-    <button class="quick-btn" onclick="handleCommand('how many active contractors')">
+    <button class="quick-btn" onclick="handleCommand('how many contractors this month')">
       <span class="q-icon">🔢</span>
-      <span><div class="q-text">Active contractors</div><div class="q-sub">How many agents</div></span>
+      <span><div class="q-text">Active this month</div><div class="q-sub">Who submitted leads</div></span>
     </button>
   </div>
 
@@ -759,24 +759,59 @@ function cmdContractors(t) {
       var contractors = data.contractors || [];
       if (contractors.length === 0) { respond('No contractor data found.'); return; }
 
-      // ── Active count query ──
-      if (/how many|count|active/.test(t) && !/who|performance|submit/.test(t)) {
-        respond(
-          'There are ' + contractors.length + ' active contractors in the system, ' +
-          'with a combined total of ' +
-          contractors.reduce(function(s, c) { return s + c.total; }, 0) +
-          ' leads submitted.'
-        );
+      // ── Resolve timeframe first (used by multiple branches) ──
+      var now2 = new Date();
+      var sinceMs = null, sinceLabel2 = '';
+      if (/2 month|two month/.test(t))       { sinceMs = now2.getTime() - 60*24*60*60*1000; sinceLabel2 = 'the last 2 months'; }
+      else if (/3 month|three month/.test(t)) { sinceMs = now2.getTime() - 90*24*60*60*1000; sinceLabel2 = 'the last 3 months'; }
+      else if (/6 month|six month/.test(t))  { sinceMs = now2.getTime() - 180*24*60*60*1000; sinceLabel2 = 'the last 6 months'; }
+      else if (/this month/.test(t))         { var d=new Date(now2.getFullYear(),now2.getMonth(),1); sinceMs=d.getTime(); sinceLabel2='this month'; }
+      else if (/last month/.test(t))         { var d=new Date(now2.getFullYear(),now2.getMonth()-1,1); sinceMs=d.getTime(); sinceLabel2='last month'; }
+      else if (/this week/.test(t))          { var d=new Date(now2); d.setDate(d.getDate()-((d.getDay()+6)%7)); d=new Date(d.getFullYear(),d.getMonth(),d.getDate()); sinceMs=d.getTime(); sinceLabel2='this week'; }
+      else if (/last week/.test(t))          { var d=new Date(now2); d.setDate(d.getDate()-((d.getDay()+6)%7)-7); d=new Date(d.getFullYear(),d.getMonth(),d.getDate()); sinceMs=d.getTime(); sinceLabel2='last week'; }
+      else if (/today/.test(t))              { var d=new Date(now2.getFullYear(),now2.getMonth(),now2.getDate()); sinceMs=d.getTime(); sinceLabel2='today'; }
+
+      // ── Active count / who is active query ──
+      if (/how many|count|active|who is active|who are active|who submitted|who put in|who bring|who brought/.test(t) && !/for [a-z]/.test(t)) {
+        var period = sinceMs;
+        var label  = sinceLabel2;
+
+        // Default: show last 30 days if no period given
+        if (!period) { period = now2.getTime() - 30*24*60*60*1000; label = 'the last 30 days'; }
+
+        var active = contractors.filter(function(c) {
+          return c.leads.some(function(l) { return new Date(l.timestamp).getTime() >= period; });
+        });
+
+        if (/how many/.test(t)) {
+          respond(
+            active.length + ' contractor' + (active.length !== 1 ? 's' : '') +
+            ' submitted leads in ' + label + ', out of ' + contractors.length + ' on the system.\n\n' +
+            active.map(function(c) {
+              var cnt = c.leads.filter(function(l) { return new Date(l.timestamp).getTime() >= period; }).length;
+              return c.name + ' (' + c.icCode + '): ' + cnt + ' lead' + (cnt !== 1 ? 's' : '');
+            }).join('\n')
+          );
+        } else {
+          // "who is active" / "who submitted"
+          if (active.length === 0) { respond('No contractors submitted leads in ' + label + '.'); return; }
+          var lines = [active.length + ' contractor' + (active.length !== 1 ? 's' : '') + ' active in ' + label + ':\n'];
+          active.forEach(function(c) {
+            var cnt = c.leads.filter(function(l) { return new Date(l.timestamp).getTime() >= period; }).length;
+            lines.push(c.name + ' (' + c.icCode + '): ' + cnt + ' lead' + (cnt !== 1 ? 's' : ''));
+          });
+          respond(lines.join('\n'));
+        }
         return;
       }
 
       // ── Specific contractor lookup ──
       var nameSearch = null;
-      var nm = t.match(/(?:contractor|agent|performance|for|how is|how did|show me)\s+([a-z]+(?: [a-z]+)?)/i);
+      var nm = t.match(/(?:for|how is|how did|show me)\s+([a-z]+(?: [a-z]+)?)/i);
       if (nm) {
-        var candidate = nm[1].toLowerCase();
-        // Don't capture generic words as names
-        if (!/^(all|this|last|the|a|an|of|in|this week|last week|today|month)$/.test(candidate)) {
+        var candidate = nm[1].toLowerCase().trim();
+        // Block generic words from being treated as names
+        if (!/^(all|this|last|the|a|an|of|in|week|month|today|performance|contractor|agent|me)$/.test(candidate)) {
           nameSearch = candidate;
         }
       }
@@ -800,50 +835,6 @@ function cmdContractors(t) {
           );
         });
         respond(lines.join('\n\n'));
-        return;
-      }
-
-      // ── Timeframe filter — who submitted in period ──
-      var sinceDate = null, sinceLabel = '';
-      var now = new Date();
-      if (/this month/.test(t)) {
-        sinceDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        sinceLabel = 'this month';
-      } else if (/last month/.test(t)) {
-        sinceDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        var endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-        sinceLabel = 'last month';
-      } else if (/this week/.test(t)) {
-        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-        sinceDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        sinceLabel = 'this week';
-      } else if (/last week/.test(t)) {
-        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 7);
-        sinceDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        sinceLabel = 'last week';
-      } else if (/today/.test(t)) {
-        sinceDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        sinceLabel = 'today';
-      }
-
-      if (sinceDate && /who|which|submit/.test(t)) {
-        // Filter contractors who had at least one lead in the period
-        var active = contractors.filter(function(c) {
-          return c.leads.some(function(l) {
-            return new Date(l.timestamp) >= sinceDate;
-          });
-        });
-        if (active.length === 0) {
-          respond('No contractors submitted leads ' + sinceLabel + '.'); return;
-        }
-        var lines = ['Contractors who submitted leads ' + sinceLabel + ':\n'];
-        active.forEach(function(c) {
-          var count = c.leads.filter(function(l) {
-            return new Date(l.timestamp) >= sinceDate;
-          }).length;
-          lines.push(c.name + ' (' + c.icCode + '): ' + count + ' lead' + (count !== 1 ? 's' : ''));
-        });
-        respond(lines.join('\n'));
         return;
       }
 
