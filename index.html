@@ -399,30 +399,20 @@ document.getElementById('pinInput').addEventListener('keydown', function(e) {
 // ── BACKEND URL ─────────────────────────────────────────────
 const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbwnXKSZ-cVchEdwg4FE5oY9F8N0zjZQNxcQkiyi_E7kfvruAm9yD187PMKtcZ9Kg0VbLw/exec';
 
-// Use JSONP to bypass CORS restrictions on Apps Script
+// Apps Script requires no-cors mode — we use a proxy approach via fetch with redirect follow
 function callBackend(action) {
-  return new Promise(function(resolve, reject) {
-    var cbName = 'jarvis_cb_' + Date.now();
-    var script = document.createElement('script');
-    var timeout = setTimeout(function() {
-      delete window[cbName];
-      document.body.removeChild(script);
-      reject(new Error('Request timed out'));
-    }, 15000);
-    window[cbName] = function(data) {
-      clearTimeout(timeout);
-      delete window[cbName];
-      document.body.removeChild(script);
-      resolve(data);
-    };
-    script.src = JARVIS_BACKEND + '?action=' + action + '&callback=' + cbName;
-    script.onerror = function() {
-      clearTimeout(timeout);
-      delete window[cbName];
-      document.body.removeChild(script);
-      reject(new Error('Script load failed'));
-    };
-    document.body.appendChild(script);
+  return fetch(JARVIS_BACKEND + '?action=' + action, {
+    method: 'GET',
+    redirect: 'follow'
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.text();
+  })
+  .then(function(text) {
+    // Strip JSONP wrapper if present
+    var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
+    try { return JSON.parse(json); } catch(e) { return JSON.parse(text); }
   });
 }
 
@@ -583,17 +573,17 @@ function handleCommand(text) {
     else if (/overview|briefing|summary|what('s| is) (happening|going on)|how are we doing/.test(t)) {
       cmdOverview();
     }
-    else if (/lead(s)?|find |look up/.test(t)) {
+    else if (/lead|leed|leen|leeds|find |look up|read me/.test(t)) {
       cmdLeads(t);
     }
-    else if (/financial|finance|money|income|expense(s)?|bank|balance|spend/.test(t)) {
+    else if (/financial|finance|money|income|expense|bank|balance|spend/.test(t)) {
       cmdFinancials();
     }
-    else if (/thank(s| you)|cheers|dankie/.test(t)) {
+    else if (/thank|cheers|dankie/.test(t)) {
       respond("You're welcome. Anything else I can help you with?");
     }
     else {
-      respond('I heard: "' + text + '". I can help with leads and financials. Try: "read me today\'s leads", "read me contacted leads", or "financial overview".');
+      respond('I heard: "' + text + '". Say "read me leads", "read me today leads", "read me contacted leads", or "financial overview".');
     }
   } catch(e) {
     respond('Sorry, I ran into an error: ' + e.message);
