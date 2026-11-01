@@ -399,14 +399,31 @@ document.getElementById('pinInput').addEventListener('keydown', function(e) {
 // ── BACKEND URL ─────────────────────────────────────────────
 const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbwnXKSZ-cVchEdwg4FE5oY9F8N0zjZQNxcQkiyi_E7kfvruAm9yD187PMKtcZ9Kg0VbLw/exec';
 
-function callBackend(action, params) {
-  var url = JARVIS_BACKEND + '?action=' + encodeURIComponent(action);
-  if (params) {
-    Object.keys(params).forEach(function(k) {
-      url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-    });
-  }
-  return fetch(url).then(function(r) { return r.json(); });
+// Use JSONP to bypass CORS restrictions on Apps Script
+function callBackend(action) {
+  return new Promise(function(resolve, reject) {
+    var cbName = 'jarvis_cb_' + Date.now();
+    var script = document.createElement('script');
+    var timeout = setTimeout(function() {
+      delete window[cbName];
+      document.body.removeChild(script);
+      reject(new Error('Request timed out'));
+    }, 15000);
+    window[cbName] = function(data) {
+      clearTimeout(timeout);
+      delete window[cbName];
+      document.body.removeChild(script);
+      resolve(data);
+    };
+    script.src = JARVIS_BACKEND + '?action=' + action + '&callback=' + cbName;
+    script.onerror = function() {
+      clearTimeout(timeout);
+      delete window[cbName];
+      document.body.removeChild(script);
+      reject(new Error('Script load failed'));
+    };
+    document.body.appendChild(script);
+  });
 }
 
 // ── COMMENTS TOGGLE ─────────────────────────────────────────
