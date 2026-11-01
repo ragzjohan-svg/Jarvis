@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis — IVA Assistant</title>
+  <style>
+    :root {
+      --gold: #d4af37;
+      --gold-dim: #a88a20;
+      --gold-glow: rgba(212,175,55,0.15);
+      --bg: #0a0a0a;
+      --panel: #141414;
+      --panel2: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --muted: #888;
+      --red: #f87171;
+      --green: #4ade80;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── HEADER ── */
+    header {
+      width: 100%;
+      border-bottom: 2px solid var(--gold);
+      padding: 18px 28px 14px;
+      display: flex;
+      align-items: flex-end;
+      gap: 16px;
+    }
+    header h1 {
+      font-size: 28px;
+      letter-spacing: 8px;
+      color: var(--gold);
+      font-weight: 700;
+    }
+    header p {
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: var(--muted);
+      padding-bottom: 4px;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-left: auto;
+      box-shadow: 0 0 6px var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity:1; } 50% { opacity:0.4; }
+    }
+
+    /* ── MAIN ── */
+    main {
+      width: 100%;
+      max-width: 640px;
+      padding: 28px 20px 60px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    /* ── ORB ── */
+    .orb-wrap { display:flex; flex-direction:column; align-items:center; gap:12px; }
+    .orb {
+      width: 110px; height: 110px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #2a2200, #0a0a0a);
+      border: 2px solid var(--gold-dim);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 0 20px var(--gold-glow), inset 0 0 20px rgba(0,0,0,0.5);
+      transition: all 0.3s ease;
+      user-select: none;
+    }
+    .orb:hover { box-shadow: 0 0 35px var(--gold-glow), inset 0 0 20px rgba(0,0,0,0.5); }
+    .orb.listening {
+      border-color: var(--gold);
+      box-shadow: 0 0 40px rgba(212,175,55,0.4), 0 0 80px rgba(212,175,55,0.15);
+      animation: orbPulse 1s ease-in-out infinite;
+    }
+    .orb.speaking {
+      border-color: var(--green);
+      box-shadow: 0 0 40px rgba(74,222,128,0.3);
+    }
+    @keyframes orbPulse {
+      0%,100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    .orb-icon { font-size: 36px; pointer-events: none; }
+    .orb-label { font-size: 11px; letter-spacing: 3px; color: var(--muted); }
+
+    /* ── TRANSCRIPT ── */
+    .transcript {
+      width: 100%;
+      min-height: 36px;
+      text-align: center;
+      font-size: 14px;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+      padding: 4px 8px;
+      transition: color 0.2s;
+    }
+    .transcript.has-text { color: var(--gold); }
+
+    /* ── RESPONSE CARD ── */
+    .response-card {
+      width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--gold);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .response-header {
+      background: var(--panel2);
+      padding: 8px 16px;
+      font-size: 10px;
+      letter-spacing: 4px;
+      color: var(--gold-dim);
+      border-bottom: 1px solid var(--border);
+    }
+    .response-body {
+      padding: 16px;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text);
+      white-space: pre-wrap;
+      min-height: 60px;
+    }
+
+    /* ── NO SPEECH WARNING ── */
+    .no-speech-warn {
+      display: none;
+      width: 100%;
+      background: rgba(248,113,113,0.1);
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--red);
+      text-align: center;
+    }
+
+    /* ── QUICK COMMANDS ── */
+    .quick-title {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--muted);
+      align-self: flex-start;
+    }
+    .quick-grid {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .quick-btn {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-align: left;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .quick-btn:hover { border-color: var(--gold-dim); background: var(--panel2); }
+    .q-icon { font-size: 20px; }
+    .q-text { font-size: 13px; font-weight: 600; }
+    .q-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* ── TEXT INPUT ── */
+    .text-input-wrap {
+      width: 100%;
+      display: flex;
+      gap: 8px;
+    }
+    .text-input {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .text-input:focus { border-color: var(--gold-dim); }
+    .text-input::placeholder { color: var(--muted); }
+    .send-btn {
+      background: var(--gold-dim);
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      color: #000;
+      font-size: 20px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .send-btn:hover { background: var(--gold); }
+
+    /* ── HISTORY ── */
+    .history { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+    .history-item {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .history-item .h-q {
+      color: var(--gold-dim);
+      font-size: 11px;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    .history-item .h-a { color: var(--muted); }
+
+    /* ── PIN LOCK ── */
+    #pinOverlay {
+      position: fixed;
+      inset: 0;
+      background: #0a0a0a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      z-index: 999;
+    }
+    #pinOverlay h2 {
+      color: var(--gold);
+      letter-spacing: 6px;
+      font-size: 22px;
+    }
+    #pinOverlay p { color: var(--muted); font-size: 13px; letter-spacing: 2px; }
+    #pinInput {
+      background: var(--panel);
+      border: 1px solid var(--gold-dim);
+      border-radius: 8px;
+      padding: 14px 20px;
+      color: var(--text);
+      font-size: 24px;
+      letter-spacing: 8px;
+      text-align: center;
+      width: 180px;
+      outline: none;
+    }
+    #pinError { color: var(--red); font-size: 13px; min-height: 18px; }
+    #pinBtn {
+      background: var(--gold-dim);
+      border: none;
+      border-radius: 8px;
+      padding: 12px 32px;
+      color: #000;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      cursor: pointer;
+    }
+    #pinBtn:hover { background: var(--gold); }
+  </style>
+</head>
+<body>
+
+<!-- ── PIN LOCK ── -->
+<div id="pinOverlay">
+  <h2>JARVIS</h2>
+  <p>/// IVA SECURE ACCESS</p>
+  <input id="pinInput" type="password" maxlength="6" placeholder="••••" inputmode="numeric"
+    onkeydown="if(event.key==='Enter') checkPin()">
+  <div id="pinError"></div>
+  <button id="pinBtn" onclick="checkPin()">ENTER</button>
+</div>
+
+<header>
+  <h1>JARVIS</h1>
+  <p>/// IVA BUSINESS ASSISTANT</p>
+  <div class="status-dot" id="statusDot" title="Systems online"></div>
+</header>
+
+<main>
+
+  <!-- ORB -->
+  <div class="orb-wrap">
+    <div class="orb" id="orb" onclick="toggleListen()" title="Tap to speak">
+      <span class="orb-icon" id="orbIcon">🎙️</span>
+    </div>
+    <div class="orb-label" id="orbLabel">Tap to speak</div>
+  </div>
+
+  <!-- TRANSCRIPT -->
+  <div class="transcript" id="transcript">Listening for your command…</div>
+
+  <!-- NO SPEECH WARNING -->
+  <div class="no-speech-warn" id="noSpeechWarn">
+    ⚠️ Your browser doesn't support voice input. Use the text box below instead.
+  </div>
+
+  <!-- RESPONSE -->
+  <div class="response-card" id="responseCard">
+    <div class="response-header">JARVIS</div>
+    <div class="response-body" id="responseBody">Systems online. How can I help you?</div>
+  </div>
+
+  <!-- QUICK COMMANDS -->
+  <div class="quick-title">Quick commands</div>
+  <div class="quick-grid">
+    <button class="quick-btn" onclick="handleCommand('give me an overview')">
+      <span class="q-icon">📊</span>
+      <span><div class="q-text">Business overview</div><div class="q-sub">Leads + financials</div></span>
+    </button>
+    <button class="quick-btn" onclick="handleCommand('read me today leads')">
+      <span class="q-icon">📋</span>
+      <span><div class="q-text">Today's leads</div><div class="q-sub">New submissions</div></span>
+    </button>
+    <button class="quick-btn" onclick="handleCommand('read me contacted leads')">
+      <span class="q-icon">📞</span>
+      <span><div class="q-text">Contacted leads</div><div class="q-sub">Deals in progress</div></span>
+    </button>
+    <button class="quick-btn" onclick="handleCommand('financial overview')">
+      <span class="q-icon">💰</span>
+      <span><div class="q-text">Financial overview</div><div class="q-sub">Income &amp; expenses</div></span>
+    </button>
+    <button class="quick-btn" onclick="handleCommand('read me won leads')">
+      <span class="q-icon">✅</span>
+      <span><div class="q-text">Won leads</div><div class="q-sub">Closed deals</div></span>
+    </button>
+    <button class="quick-btn" onclick="handleCommand('read me this week leads')">
+      <span class="q-icon">📅</span>
+      <span><div class="q-text">This week's leads</div><div class="q-sub">Weekly summary</div></span>
+    </button>
+  </div>
+
+  <!-- COMMENTS TOGGLE -->
+  <div style="display:flex;justify-content:center;margin:4px 0;">
+    <button id="commentsToggle" onclick="toggleComments()" style="
+      background:#1a1a1a;border:1px solid #2a2a2a;color:#888;
+      font-size:12px;letter-spacing:1px;padding:6px 18px;border-radius:20px;cursor:pointer;">
+      💬 COMMENTS: ON
+    </button>
+  </div>
+
+  <!-- TEXT INPUT -->
+  <div class="text-input-wrap">
+    <input class="text-input" id="textInput" type="text" placeholder="Or type a command here…" onkeydown="if(event.key==='Enter') sendText()">
+    <button class="send-btn" onclick="sendText()">›</button>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="history" id="history"></div>
+
+</main>
+
+<script>
+// ============================================================
+// JARVIS — IVA Business Assistant (Standalone / GitHub Pages)
+// Communicates with Apps Script backend via fetch()
+// ============================================================
+
+// ── PIN LOCK ────────────────────────────────────────────────
+const JARVIS_PIN = '1977'; // ← Change this to your preferred PIN
+function checkPin() {
+  const val = document.getElementById('pinInput').value.trim();
+  if (val === JARVIS_PIN) {
+    document.getElementById('pinOverlay').style.display = 'none';
+    speak("Good " + getTimeOfDay() + ". I'm Jarvis, your IVA business assistant. How can I help you?");
+  } else {
+    document.getElementById('pinError').textContent = 'Incorrect PIN. Try again.';
+    document.getElementById('pinInput').value = '';
+  }
+}
+document.getElementById('pinInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') checkPin();
+});
+
+// ── BACKEND URL ─────────────────────────────────────────────
+const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbwnXKSZ-cVchEdwg4FE5oY9F8N0zjZQNxcQkiyi_E7kfvruAm9yD187PMKtcZ9Kg0VbLw/exec';
+
+function callBackend(action, params) {
+  var url = JARVIS_BACKEND + '?action=' + encodeURIComponent(action);
+  if (params) {
+    Object.keys(params).forEach(function(k) {
+      url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    });
+  }
+  return fetch(url).then(function(r) { return r.json(); });
+}
+
+// ── COMMENTS TOGGLE ─────────────────────────────────────────
+var showComments = true;
+function toggleComments() {
+  showComments = !showComments;
+  var btn = document.getElementById('commentsToggle');
+  btn.textContent = '💬 COMMENTS: ' + (showComments ? 'ON' : 'OFF');
+  btn.style.color = showComments ? '#888' : '#d4af37';
+  btn.style.borderColor = showComments ? '#2a2a2a' : '#d4af37';
+}
+
+// ── SPEECH RECOGNITION ──────────────────────────────────────
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let isListening = false;
+let isSpeaking = false;
+
+if (SpeechRec) {
+  recognition = new SpeechRec();
+  recognition.lang = 'en-ZA';
+  recognition.continuous = false;
+  recognition.interimResults = true;
+
+  recognition.onstart = () => {
+    isListening = true;
+    setOrbState('listening');
+    setTranscript('Listening…', false);
+  };
+
+  recognition.onresult = (e) => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    setTranscript(final || interim, !!(final || interim));
+    if (final) {
+      stopListening();
+      handleCommand(final.trim());
+    }
+  };
+
+  recognition.onerror = (e) => {
+    stopListening();
+    if (e.error === 'no-speech') setTranscript('No speech detected. Try again.', false);
+    else if (e.error === 'not-allowed') setTranscript('Microphone blocked. Check browser permissions.', false);
+    else setTranscript('Error: ' + e.error, false);
+  };
+
+  recognition.onend = () => { if (isListening) stopListening(); };
+} else {
+  document.getElementById('noSpeechWarn').style.display = 'block';
+}
+
+function toggleListen() {
+  if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking = false; }
+  if (isListening) stopListening();
+  else startListening();
+}
+function startListening() {
+  if (!recognition) return;
+  try { recognition.start(); } catch(e) {}
+}
+function stopListening() {
+  isListening = false;
+  setOrbState('idle');
+  if (recognition) try { recognition.stop(); } catch(e) {}
+}
+function setOrbState(state) {
+  const orb = document.getElementById('orb');
+  const icon = document.getElementById('orbIcon');
+  const label = document.getElementById('orbLabel');
+  orb.className = 'orb' + (state !== 'idle' ? ' ' + state : '');
+  if (state === 'listening') { icon.textContent = '🎙️'; label.textContent = 'Listening…'; }
+  else if (state === 'speaking') { icon.textContent = '🔊'; label.textContent = 'Speaking…'; }
+  else { icon.textContent = '🎙️'; label.textContent = 'Tap to speak'; }
+}
+function setTranscript(text, hasText) {
+  const el = document.getElementById('transcript');
+  el.textContent = text || 'Listening for your command…';
+  el.className = 'transcript' + (hasText ? ' has-text' : '');
+}
+
+// ── SPEECH SYNTHESIS ────────────────────────────────────────
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = 'en-ZA';
+  utt.rate = 1.05;
+  utt.pitch = 0.85;
+
+  const trySpeak = () => {
+    const voices = window.speechSynthesis.getVoices();
+    const maleVoice =
+      voices.find(v => v.lang === 'en-ZA' && /male/i.test(v.name)) ||
+      voices.find(v => v.lang.startsWith('en') && /male/i.test(v.name)) ||
+      voices.find(v => /david|mark|daniel|james|google uk english male|google us english/i.test(v.name)) ||
+      null;
+    if (maleVoice) utt.voice = maleVoice;
+    utt.onstart = () => { isSpeaking = true; setOrbState('speaking'); };
+    utt.onend   = () => { isSpeaking = false; setOrbState('idle'); };
+    utt.onerror = () => { isSpeaking = false; setOrbState('idle'); };
+    window.speechSynthesis.speak(utt);
+  };
+
+  // Voices may not be loaded yet on first call
+  if (window.speechSynthesis.getVoices().length) trySpeak();
+  else window.speechSynthesis.onvoiceschanged = trySpeak;
+}
+
+// ── HELPERS ─────────────────────────────────────────────────
+function getTimeOfDay() {
+  const h = new Date().getHours();
+  return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+}
+function formatRand(val) {
+  if (val == null || val === '') return 'R 0.00';
+  return 'R ' + Number(val).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+function showLoading() {
+  document.getElementById('responseBody').textContent = 'Fetching data…';
+}
+function respond(text) {
+  document.getElementById('responseBody').textContent = text;
+  addHistory(document.getElementById('transcript').textContent, text);
+  speak(text);
+}
+function addHistory(q, a) {
+  if (!q || q === 'Listening for your command…' || q === 'Listening…') return;
+  const h = document.getElementById('history');
+  const div = document.createElement('div');
+  div.className = 'history-item';
+  div.innerHTML = '<div class="h-q">YOU SAID</div><div style="margin-bottom:8px;font-size:13px;">' +
+    q + '</div><div class="h-q">JARVIS</div><div class="h-a">' + a.substring(0, 200) + (a.length > 200 ? '…' : '') + '</div>';
+  h.insertBefore(div, h.firstChild);
+  if (h.children.length > 5) h.removeChild(h.lastChild);
+}
+function sendText() {
+  const input = document.getElementById('textInput');
+  const val = input.value.trim();
+  if (!val) return;
+  input.value = '';
+  setTranscript(val, true);
+  handleCommand(val);
+}
+
+// ── COMMAND ROUTER ───────────────────────────────────────────
+function handleCommand(text) {
+  const t = text.toLowerCase().trim();
+  showLoading();
+  try {
+    if (/^(hello|hi|hey|good morning|good afternoon|good evening|howzit|hallo)/.test(t)) {
+      respond('Good ' + getTimeOfDay() + ". I'm Jarvis, your IVA business assistant. How can I help you?");
+    }
+    else if (/overview|briefing|summary|what('s| is) (happening|going on)|how are we doing/.test(t)) {
+      cmdOverview();
+    }
+    else if (/lead(s)?|find |look up/.test(t)) {
+      cmdLeads(t);
+    }
+    else if (/financial|finance|money|income|expense(s)?|bank|balance|spend/.test(t)) {
+      cmdFinancials();
+    }
+    else if (/thank(s| you)|cheers|dankie/.test(t)) {
+      respond("You're welcome. Anything else I can help you with?");
+    }
+    else {
+      respond('I heard: "' + text + '". I can help with leads and financials. Try: "read me today\'s leads", "read me contacted leads", or "financial overview".');
+    }
+  } catch(e) {
+    respond('Sorry, I ran into an error: ' + e.message);
+  }
+}
+
+// ── FINANCIALS ───────────────────────────────────────────────
+function cmdFinancials() {
+  callBackend('getSummary')
+    .then(function(data) {
+      if (!data || !data.summary) {
+        respond('Financial data is not available right now.');
+        return;
+      }
+      const s = data.summary;
+      respond(
+        'Financial overview for ' + (s.period || 'this period') + ':\n\n' +
+        'Income: ' + formatRand(s.income) + '\n' +
+        'Expenses: ' + formatRand(s.expenses) + '\n' +
+        'Bank charges: ' + formatRand(s.bankCharges) + '\n' +
+        'Current balance: ' + formatRand(s.closingBalance) + '\n' +
+        'Available credit: ' + formatRand(s.availableCredit) + '\n' +
+        'Transactions: ' + s.transactionCount
+      );
+    })
+    .catch(function(err) {
+      respond('Could not reach financial data: ' + err.message);
+    });
+}
+
+// ── LEADS ────────────────────────────────────────────────────
+function cmdLeads(t) {
+  showLoading();
+  callBackend('getLeads')
+    .then(function(data) {
+      if (data.error) { respond('I could not read the leads: ' + data.error); return; }
+      if (data.total === 0) { respond('There are no leads in the system yet.'); return; }
+
+      // ── PARSE NAME SEARCH ──
+      var nameSearch = null;
+      var nameMatch = t.match(/(?:lead for|find|look up|lookup)\s+([a-z]+(?: [a-z]+)?)/i);
+      if (nameMatch) nameSearch = nameMatch[1].toLowerCase().trim();
+
+      // ── PARSE DATE ──
+      var targetDate = null;
+      var targetLabel = '';
+      var now = new Date();
+
+      if (/today/.test(t)) {
+        targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        targetLabel = 'today';
+      } else if (/yesterday/.test(t)) {
+        targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        targetLabel = 'yesterday';
+      } else if (/last\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/.test(t)) {
+        var dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+        var dm = t.match(/last\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
+        var td = dayNames.indexOf(dm[1]);
+        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() - td + 7) % 7 || 7));
+        targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        targetLabel = 'last ' + dm[1];
+      } else if (/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/.test(t)) {
+        var dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+        var dm = t.match(/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
+        var td = dayNames.indexOf(dm[1]);
+        var diff = (now.getDay() - td + 7) % 7; if (diff === 0) diff = 7;
+        var d = new Date(now); d.setDate(d.getDate() - diff);
+        targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        targetLabel = dm[1];
+      } else if (/this week/.test(t)) {
+        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+        targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        targetLabel = 'this week';
+      } else if (/last week/.test(t)) {
+        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 7);
+        targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        targetLabel = 'last week';
+      }
+
+      // ── PARSE STATUS ──
+      var statusFilter = null, statusLabel = '';
+      if (/contacted/.test(t))     { statusFilter = 'contacted'; statusLabel = 'contacted'; }
+      else if (/\bnew\b/.test(t))  { statusFilter = 'new';       statusLabel = 'new'; }
+      else if (/\bwon\b/.test(t))  { statusFilter = 'won';       statusLabel = 'won'; }
+      else if (/\blost\b/.test(t)) { statusFilter = 'lost';      statusLabel = 'lost'; }
+
+      // ── FILTER ──
+      var subset;
+      if (nameSearch) {
+        subset = data.leads.filter(function(l) {
+          var nm = l.clientName.toLowerCase().indexOf(nameSearch) !== -1;
+          var dm = true;
+          if (targetDate) {
+            var isWeek = /week/.test(targetLabel);
+            var re = new Date(targetDate.getTime() + (isWeek ? 7 : 1) * 86400000);
+            var ld = new Date(l.timestamp); dm = ld >= targetDate && ld < re;
+          }
+          var sm = statusFilter ? l.status.toLowerCase().indexOf(statusFilter) !== -1 : true;
+          return nm && dm && sm;
+        });
+        targetLabel = targetLabel || nameSearch;
+      } else if (targetDate) {
+        var isWeek = /week/.test(targetLabel);
+        var rangeEnd = new Date(targetDate.getTime() + (isWeek ? 7 : 1) * 86400000);
+        subset = data.leads.filter(function(l) {
+          if (!l.timestamp) return false;
+          var ld = new Date(l.timestamp);
+          var dm = ld >= targetDate && ld < rangeEnd;
+          var sm = statusFilter ? l.status.toLowerCase().indexOf(statusFilter) !== -1 : true;
+          return dm && sm;
+        });
+      } else if (statusFilter) {
+        subset = data.leads.filter(function(l) {
+          return l.status.toLowerCase().indexOf(statusFilter) !== -1;
+        });
+      } else {
+        subset = data.leads.slice(0, 5);
+        targetLabel = 'most recent';
+      }
+
+      var combinedLabel = [nameSearch ? 'search: ' + nameSearch : '', targetLabel, statusLabel].filter(Boolean).join(', ') || 'most recent';
+      var summary = 'You have ' + data.total + ' leads in total. ';
+
+      if (subset.length === 0) {
+        respond(summary + 'No leads found for ' + combinedLabel + '.'); return;
+      }
+
+      summary += subset.length + ' lead' + (subset.length !== 1 ? 's' : '') + ' for ' + combinedLabel + ':\n';
+      var toRead = subset.slice(0, 10);
+      var lines = [summary];
+
+      toRead.forEach(function(l, i) {
+        lines.push(
+          'Lead ' + (i + 1) + ': ' +
+          (l.clientName || 'Unknown client') + '. ' +
+          'Phone: ' + (l.clientPhone || 'not provided') + '. ' +
+          'Looking for: ' + (l.product || 'not specified') + '. ' +
+          'Submitted by: ' + (l.icCode || 'unknown') + '. ' +
+          'Status: ' + l.status + '. ' +
+          'Submitted: ' + (l.timestamp || 'unknown') + '.' +
+          (showComments && l.comments   ? ' Contractor note: ' + l.comments + '.' : '') +
+          (showComments && l.adminNotes ? ' Admin update: ' + l.adminNotes + '.' : '')
+        );
+      });
+
+      if (subset.length > 10) lines.push('There are ' + (subset.length - 10) + ' more. Ask for all leads if you need the full list.');
+      respond(lines.join('\n\n'));
+    })
+    .catch(function(err) {
+      respond('Could not reach the leads system: ' + err.message);
+    });
+}
+
+// ── OVERVIEW ─────────────────────────────────────────────────
+function cmdOverview() {
+  showLoading();
+  callBackend('getSummary')
+    .then(function(finData) {
+      return callBackend('getLeads').then(function(leadsData) {
+        var lines = ['Here is your IVA business overview:\n'];
+        if (finData && finData.summary) {
+          var s = finData.summary;
+          lines.push('Income: ' + formatRand(s.income));
+          lines.push('Expenses: ' + formatRand(s.expenses));
+          lines.push('Balance: ' + formatRand(s.closingBalance));
+        }
+        if (leadsData && !leadsData.error) {
+          lines.push('Total leads: ' + leadsData.total);
+          var newLeads = (leadsData.leads || []).filter(function(l) {
+            return l.status.toLowerCase() === 'new';
+          });
+          lines.push('New leads: ' + newLeads.length);
+          var contacted = (leadsData.leads || []).filter(function(l) {
+            return l.status.toLowerCase() === 'contacted';
+          });
+          lines.push('Contacted: ' + contacted.length);
+        }
+        respond(lines.join('\n'));
+      });
+    })
+    .catch(function(err) {
+      respond('Could not load overview: ' + err.message);
+    });
+}
+
+</script>
+</body>
+</html>
