@@ -352,6 +352,14 @@
       <span class="q-icon">📅</span>
       <span><div class="q-text">This week's leads</div><div class="q-sub">Weekly summary</div></span>
     </button>
+    <button class="quick-btn" onclick="handleCommand('contractor performance')">
+      <span class="q-icon">👥</span>
+      <span><div class="q-text">Contractor performance</div><div class="q-sub">All agent stats</div></span>
+    </button>
+    <button class="quick-btn" onclick="handleCommand('how many active contractors')">
+      <span class="q-icon">🔢</span>
+      <span><div class="q-text">Active contractors</div><div class="q-sub">How many agents</div></span>
+    </button>
   </div>
 
   <!-- COMMENTS TOGGLE -->
@@ -573,6 +581,9 @@ function handleCommand(text) {
     else if (/overview|briefing|summary|what('s| is) (happening|going on)|how are we doing/.test(t)) {
       cmdOverview();
     }
+    else if (/contractor|agent|ic code|who submitted|performance|active contractor|how many contractor|how many agent/.test(t)) {
+      cmdContractors(t);
+    }
     else if (/lead|leed|leen|leeds|find |look up|read me/.test(t)) {
       cmdLeads(t);
     }
@@ -583,7 +594,7 @@ function handleCommand(text) {
       respond("You're welcome. Anything else I can help you with?");
     }
     else {
-      respond('I heard: "' + text + '". Say "read me leads", "read me today leads", "read me contacted leads", or "financial overview".');
+      respond('I heard: "' + text + '". Say "read me leads", "read me today leads", "read me contacted leads", "contractor performance", "how many contractors", or "financial overview".');
     }
   } catch(e) {
     respond('Sorry, I ran into an error: ' + e.message);
@@ -632,7 +643,7 @@ function cmdLeads(t) {
       var targetLabel = '';
       var now = new Date();
 
-      if (/today/.test(t)) {
+      if (/today|todays|today's/.test(t)) {
         targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         targetLabel = 'today';
       } else if (/yesterday/.test(t)) {
@@ -699,9 +710,11 @@ function cmdLeads(t) {
         subset = data.leads.filter(function(l) {
           return l.status.toLowerCase().indexOf(statusFilter) !== -1;
         });
-      } else {
+      } else if (!nameSearch && !statusFilter) {
         subset = data.leads.slice(0, 5);
         targetLabel = 'most recent';
+      } else {
+        subset = [];
       }
 
       var combinedLabel = [nameSearch ? 'search: ' + nameSearch : '', targetLabel, statusLabel].filter(Boolean).join(', ') || 'most recent';
@@ -734,6 +747,120 @@ function cmdLeads(t) {
     })
     .catch(function(err) {
       respond('Could not reach the leads system: ' + err.message);
+    });
+}
+
+// ── CONTRACTORS ──────────────────────────────────────────────
+function cmdContractors(t) {
+  showLoading();
+  callBackend('getContractors')
+    .then(function(data) {
+      if (data.error) { respond('Could not read contractor data: ' + data.error); return; }
+      var contractors = data.contractors || [];
+      if (contractors.length === 0) { respond('No contractor data found.'); return; }
+
+      // ── Active count query ──
+      if (/how many|count|active/.test(t) && !/who|performance|submit/.test(t)) {
+        respond(
+          'There are ' + contractors.length + ' active contractors in the system, ' +
+          'with a combined total of ' +
+          contractors.reduce(function(s, c) { return s + c.total; }, 0) +
+          ' leads submitted.'
+        );
+        return;
+      }
+
+      // ── Specific contractor lookup ──
+      var nameSearch = null;
+      var nm = t.match(/(?:contractor|agent|performance|for|how is|how did|show me)\s+([a-z]+(?: [a-z]+)?)/i);
+      if (nm) {
+        var candidate = nm[1].toLowerCase();
+        // Don't capture generic words as names
+        if (!/^(all|this|last|the|a|an|of|in|this week|last week|today|month)$/.test(candidate)) {
+          nameSearch = candidate;
+        }
+      }
+
+      if (nameSearch) {
+        var found = contractors.filter(function(c) {
+          return c.name.toLowerCase().indexOf(nameSearch) !== -1 ||
+                 c.icCode.toLowerCase().indexOf(nameSearch) !== -1;
+        });
+        if (found.length === 0) {
+          respond('No contractor found matching "' + nameSearch + '".');
+          return;
+        }
+        var lines = [];
+        found.forEach(function(c) {
+          lines.push(
+            c.name + ' (IC: ' + c.icCode + '):\n' +
+            '  Total leads: ' + c.total + '\n' +
+            '  New: ' + c.new + ', Contacted: ' + c.contacted + ', Won: ' + c.won + ', Lost: ' + c.lost + '\n' +
+            (c.lastLeadDate ? '  Last lead submitted: ' + c.lastLeadDate : '')
+          );
+        });
+        respond(lines.join('\n\n'));
+        return;
+      }
+
+      // ── Timeframe filter — who submitted in period ──
+      var sinceDate = null, sinceLabel = '';
+      var now = new Date();
+      if (/this month/.test(t)) {
+        sinceDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        sinceLabel = 'this month';
+      } else if (/last month/.test(t)) {
+        sinceDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        var endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+        sinceLabel = 'last month';
+      } else if (/this week/.test(t)) {
+        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+        sinceDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        sinceLabel = 'this week';
+      } else if (/last week/.test(t)) {
+        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 7);
+        sinceDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        sinceLabel = 'last week';
+      } else if (/today/.test(t)) {
+        sinceDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        sinceLabel = 'today';
+      }
+
+      if (sinceDate && /who|which|submit/.test(t)) {
+        // Filter contractors who had at least one lead in the period
+        var active = contractors.filter(function(c) {
+          return c.leads.some(function(l) {
+            return new Date(l.timestamp) >= sinceDate;
+          });
+        });
+        if (active.length === 0) {
+          respond('No contractors submitted leads ' + sinceLabel + '.'); return;
+        }
+        var lines = ['Contractors who submitted leads ' + sinceLabel + ':\n'];
+        active.forEach(function(c) {
+          var count = c.leads.filter(function(l) {
+            return new Date(l.timestamp) >= sinceDate;
+          }).length;
+          lines.push(c.name + ' (' + c.icCode + '): ' + count + ' lead' + (count !== 1 ? 's' : ''));
+        });
+        respond(lines.join('\n'));
+        return;
+      }
+
+      // ── Overall performance / default ──
+      var top = contractors.slice(0, 8);
+      var lines = ['Contractor performance overview. ' + contractors.length + ' active contractors.\n'];
+      top.forEach(function(c, i) {
+        lines.push(
+          (i + 1) + '. ' + c.name + ': ' + c.total + ' leads — ' +
+          'Won: ' + c.won + ', Contacted: ' + c.contacted + ', New: ' + c.new + ', Lost: ' + c.lost
+        );
+      });
+      if (contractors.length > 8) lines.push('...and ' + (contractors.length - 8) + ' more contractors.');
+      respond(lines.join('\n'));
+    })
+    .catch(function(err) {
+      respond('Could not reach contractor data: ' + err.message);
     });
 }
 
