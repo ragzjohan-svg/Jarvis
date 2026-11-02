@@ -1050,11 +1050,12 @@ function resolveEmailSubject(text) {
   return 'Jarvis Report';
 }
 
-function sendJarvisEmail(recipient, subject, confirmMsg, originalText) {
+function sendJarvisEmail(recipient, subject, confirmMsg, originalText, asPdf) {
   respond(confirmMsg, '');
   var action = 'sendEmail&to=' + encodeURIComponent(recipient) +
                '&subject=' + encodeURIComponent(subject) +
-               '&detail=' + encodeURIComponent(originalText || '');
+               '&detail=' + encodeURIComponent(originalText || '') +
+               (asPdf ? '&pdf=true' : '');
   callBackend(action)
     .then(function(data) {
       // Email sent successfully regardless of callback shape
@@ -1080,8 +1081,10 @@ function handleCommand(text){
     var subject   = resolveEmailSubject(text);
     var recipientName = recipient === 'johan@brisksure.co.za' ? 'you, sir' :
                         recipient === 'jansevanrensburg.luanne@gmail.com' ? 'Luanne' : recipient;
-    var confirmMsg = 'Sending the ' + subject.toLowerCase() + ' to ' + recipientName + ' now.';
-    sendJarvisEmail(recipient, subject, confirmMsg, text);
+    var asPdf = /pdf|document|attach/.test(t);
+    var confirmMsg = 'Sending the ' + subject.toLowerCase() + ' to ' + recipientName +
+                     (asPdf ? ' as a PDF' : '') + ' now.';
+    sendJarvisEmail(recipient, subject, confirmMsg, text, asPdf);
     return;
   }
 
