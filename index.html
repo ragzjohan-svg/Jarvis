@@ -75,35 +75,85 @@
       gap: 20px;
     }
 
-    /* ── ORB ── */
-    .orb-wrap { display:flex; flex-direction:column; align-items:center; gap:12px; }
-    .orb {
-      width: 110px; height: 110px;
-      border-radius: 50%;
-      background: radial-gradient(circle at 35% 35%, #2a2200, #0a0a0a);
-      border: 2px solid var(--gold-dim);
-      display: flex; align-items: center; justify-content: center;
+    /* ── ORB / GLOBE ── */
+    .orb-wrap { display:flex; flex-direction:column; align-items:center; gap:16px; }
+
+    .globe-container {
+      position: relative;
+      width: 160px; height: 160px;
       cursor: pointer;
-      box-shadow: 0 0 20px var(--gold-glow), inset 0 0 20px rgba(0,0,0,0.5);
-      transition: all 0.3s ease;
       user-select: none;
     }
-    .orb:hover { box-shadow: 0 0 35px var(--gold-glow), inset 0 0 20px rgba(0,0,0,0.5); }
-    .orb.listening {
+
+    /* Outer ring */
+    .globe-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1.5px solid var(--gold-dim);
+      transition: border-color 0.4s, box-shadow 0.4s;
+    }
+    .globe-ring-2 {
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      border: 1px solid rgba(212,175,55,0.15);
+      transition: all 0.4s;
+    }
+
+    /* The globe itself */
+    canvas#globeCanvas {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      width: 160px; height: 160px;
+    }
+
+    /* Tap hit area */
+    .globe-hit {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      z-index: 10;
+    }
+
+    /* State glow rings */
+    .globe-container.listening .globe-ring {
       border-color: var(--gold);
-      box-shadow: 0 0 40px rgba(212,175,55,0.4), 0 0 80px rgba(212,175,55,0.15);
-      animation: orbPulse 1s ease-in-out infinite;
+      box-shadow: 0 0 0 4px rgba(212,175,55,0.12), 0 0 40px rgba(212,175,55,0.35);
+      animation: ringPulse 1.2s ease-in-out infinite;
     }
-    .orb.speaking {
+    .globe-container.listening .globe-ring-2 {
+      border-color: rgba(212,175,55,0.3);
+      animation: ringPulse2 1.2s ease-in-out infinite;
+    }
+    .globe-container.thinking .globe-ring {
+      border-color: #a88aff;
+      box-shadow: 0 0 0 3px rgba(168,138,255,0.1), 0 0 30px rgba(168,138,255,0.3);
+    }
+    .globe-container.speaking .globe-ring {
       border-color: var(--green);
-      box-shadow: 0 0 40px rgba(74,222,128,0.3);
+      box-shadow: 0 0 0 3px rgba(74,222,128,0.12), 0 0 35px rgba(74,222,128,0.3);
     }
-    @keyframes orbPulse {
-      0%,100% { transform: scale(1); }
-      50% { transform: scale(1.05); }
+
+    @keyframes ringPulse {
+      0%,100% { box-shadow: 0 0 0 4px rgba(212,175,55,0.12), 0 0 40px rgba(212,175,55,0.35); }
+      50%      { box-shadow: 0 0 0 8px rgba(212,175,55,0.08), 0 0 60px rgba(212,175,55,0.5); }
     }
-    .orb-icon { font-size: 36px; pointer-events: none; }
-    .orb-label { font-size: 11px; letter-spacing: 3px; color: var(--muted); }
+    @keyframes ringPulse2 {
+      0%,100% { transform: scale(1); opacity:1; }
+      50%      { transform: scale(1.04); opacity:0.6; }
+    }
+
+    .orb-label {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--muted);
+      transition: color 0.3s;
+    }
+    .globe-container.listening  ~ .orb-label { color: var(--gold); }
+    .globe-container.thinking   ~ .orb-label { color: #a88aff; }
+    .globe-container.speaking   ~ .orb-label { color: var(--green); }
 
     /* ── TRANSCRIPT ── */
     .transcript {
@@ -303,10 +353,13 @@
 
 <main>
 
-  <!-- ORB -->
+  <!-- GLOBE -->
   <div class="orb-wrap">
-    <div class="orb" id="orb" onclick="toggleListen()" title="Tap to speak">
-      <span class="orb-icon" id="orbIcon">🎙️</span>
+    <div class="globe-container" id="orb" onclick="toggleListen()">
+      <canvas id="globeCanvas" width="160" height="160"></canvas>
+      <div class="globe-ring"></div>
+      <div class="globe-ring-2"></div>
+      <div class="globe-hit"></div>
     </div>
     <div class="orb-label" id="orbLabel">Tap to speak</div>
   </div>
@@ -504,13 +557,160 @@ function stopListening() {
 }
 function setOrbState(state) {
   const orb = document.getElementById('orb');
-  const icon = document.getElementById('orbIcon');
   const label = document.getElementById('orbLabel');
-  orb.className = 'orb' + (state !== 'idle' ? ' ' + state : '');
-  if (state === 'listening') { icon.textContent = '🎙️'; label.textContent = 'Listening…'; }
-  else if (state === 'speaking') { icon.textContent = '🔊'; label.textContent = 'Speaking…'; }
-  else { icon.textContent = '🎙️'; label.textContent = 'Tap to speak'; }
+  orb.className = 'globe-container' + (state !== 'idle' ? ' ' + state : '');
+  if (state === 'listening')     { label.textContent = 'Listening…';  globeState = 'listening'; }
+  else if (state === 'thinking') { label.textContent = 'Thinking…';   globeState = 'thinking'; }
+  else if (state === 'speaking') { label.textContent = 'Speaking…';   globeState = 'speaking'; }
+  else                           { label.textContent = 'Tap to speak';globeState = 'idle'; }
 }
+
+// ── GLOBE ANIMATION ──────────────────────────────────────────
+var globeState = 'idle';
+(function() {
+  const canvas = document.getElementById('globeCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = 160, H = 160, CX = W/2, CY = H/2, R = 68;
+
+  // Latitude lines
+  const latLines = [-60,-40,-20,0,20,40,60];
+  // Longitude lines (angles in degrees)
+  const lonCount = 8;
+  // Flowing particles
+  const particles = [];
+  for (let i = 0; i < 28; i++) {
+    particles.push({
+      lat: (Math.random()-0.5)*Math.PI,   // -π/2 .. π/2
+      lon: Math.random()*Math.PI*2,
+      speed: 0.004 + Math.random()*0.006,
+      size:  0.8 + Math.random()*1.2,
+      alpha: 0.3 + Math.random()*0.5
+    });
+  }
+
+  let rotation = 0;
+  let frame = 0;
+
+  function project(lat, lon, rot) {
+    // Rotate lon
+    const l = lon + rot;
+    const x = CX + R * Math.cos(lat) * Math.sin(l);
+    const y = CY - R * Math.sin(lat);
+    const z = Math.cos(lat) * Math.cos(l); // depth: >0 = front
+    return { x, y, z };
+  }
+
+  function stateColor() {
+    if (globeState === 'listening') return { r:212, g:175, b:55  };
+    if (globeState === 'thinking')  return { r:168, g:138, b:255 };
+    if (globeState === 'speaking')  return { r:74,  g:222, b:128 };
+    return { r:180, g:140, b:40 };
+  }
+
+  function draw() {
+    frame++;
+    ctx.clearRect(0, 0, W, H);
+
+    const col = stateColor();
+    const cs = `${col.r},${col.g},${col.b}`;
+
+    // Speed depends on state
+    let rotSpeed = globeState === 'idle' ? 0.003 : globeState === 'listening' ? 0.008 : globeState === 'thinking' ? 0.012 : 0.006;
+    rotation += rotSpeed;
+
+    // Clip to circle
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(CX, CY, R, 0, Math.PI*2);
+    ctx.clip();
+
+    // Background sphere gradient
+    const grad = ctx.createRadialGradient(CX-20, CY-20, 5, CX, CY, R);
+    grad.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.07)`);
+    grad.addColorStop(0.6, 'rgba(10,10,10,0.85)');
+    grad.addColorStop(1, 'rgba(5,5,5,0.95)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Latitude lines
+    latLines.forEach(function(deg) {
+      const lat = deg * Math.PI/180;
+      const cosLat = Math.cos(lat);
+      const yPos   = CY - R * Math.sin(lat);
+      const rx     = R * cosLat;
+      if (rx < 2) return;
+      ctx.beginPath();
+      ctx.ellipse(CX, yPos, rx, rx*0.15, 0, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(${cs},0.12)`;
+      ctx.lineWidth = 0.6;
+      ctx.stroke();
+    });
+
+    // Longitude lines
+    for (let i = 0; i < lonCount; i++) {
+      const baseLon = (i / lonCount) * Math.PI*2;
+      const lon = baseLon + rotation;
+      const cosLon = Math.cos(lon);
+      // Only draw front-facing meridians (cosLon > -0.2)
+      if (cosLon < -0.2) continue;
+      const alpha = Math.max(0, cosLon) * 0.18;
+      ctx.beginPath();
+      for (let step = 0; step <= 40; step++) {
+        const lat = (step/40)*Math.PI - Math.PI/2;
+        const p = project(lat, baseLon, rotation);
+        if (step === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = `rgba(${cs},${alpha})`;
+      ctx.lineWidth = 0.6;
+      ctx.stroke();
+    }
+
+    // Flowing particles
+    const pulseMult = globeState === 'listening' ? (1 + 0.4*Math.sin(frame*0.12)) :
+                      globeState === 'thinking'  ? (1 + 0.6*Math.sin(frame*0.18)) :
+                      globeState === 'speaking'  ? (1 + 0.5*Math.sin(frame*0.10)) : 1;
+
+    particles.forEach(function(p) {
+      p.lon += p.speed * pulseMult;
+      const pt = project(p.lat, p.lon, rotation);
+      if (pt.z < 0) return; // behind the globe
+      const fade = pt.z * p.alpha;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, p.size * pt.z, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(${cs},${fade.toFixed(2)})`;
+      ctx.fill();
+    });
+
+    ctx.restore();
+
+    // Outer glow rim
+    const rim = ctx.createRadialGradient(CX, CY, R-6, CX, CY, R+3);
+    rim.addColorStop(0, `rgba(${cs},0.0)`);
+    rim.addColorStop(0.5, `rgba(${cs},${globeState==='idle'?0.06:0.15})`);
+    rim.addColorStop(1, `rgba(${cs},0.0)`);
+    ctx.beginPath();
+    ctx.arc(CX, CY, R+2, 0, Math.PI*2);
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    // Specular highlight
+    const spec = ctx.createRadialGradient(CX-24, CY-24, 2, CX-20, CY-20, 40);
+    spec.addColorStop(0, 'rgba(255,255,255,0.12)');
+    spec.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(CX, CY, R, 0, Math.PI*2);
+    ctx.clip();
+    ctx.fillStyle = spec;
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+
+    requestAnimationFrame(draw);
+  }
+
+  draw();
+})();
 function setTranscript(text, hasText) {
   const el = document.getElementById('transcript');
   el.textContent = text || 'Listening for your command…';
@@ -569,6 +769,7 @@ function formatRand(val) {
 }
 function showLoading() {
   document.getElementById('responseBody').textContent = 'Fetching data…';
+  setOrbState('thinking');
 }
 function respond(text) {
   document.getElementById('responseBody').textContent = text;
