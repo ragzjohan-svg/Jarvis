@@ -527,15 +527,23 @@ document.getElementById('pinInput').addEventListener('keydown', e => { if(e.key=
 const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbyK2EhkwwKQJhl_1A4ZxZwc-XYXHVk0P7NNPiJ8RFcUK7sWnxgGKCnLlglU7Yg5MKdz/exec';
 
 function askGemini(prompt) {
-  // Trim prompt to stay well under URL limits — contractor dir is injected separately
   var safe = prompt.length > 3000 ? prompt.slice(0, 3000) : prompt;
   var url = JARVIS_BACKEND + '?action=askGemini&prompt=' + encodeURIComponent(safe);
+  document.getElementById('responseBody').textContent = 'Calling backend… (' + url.length + ' chars)';
   return fetch(url, { method:'GET', redirect:'follow' })
-    .then(r => r.text())
+    .then(r => {
+      document.getElementById('responseBody').textContent = 'Got HTTP ' + r.status + ', reading…';
+      return r.text();
+    })
     .then(text => {
+      document.getElementById('responseBody').textContent = 'Raw: ' + text.slice(0, 200);
       var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
       try { var d = JSON.parse(json); return d.answer || d.error || 'No response.'; }
-      catch(e) { return 'Could not parse response: ' + text.slice(0,100); }
+      catch(e) { return 'Parse error: ' + text.slice(0, 150); }
+    })
+    .catch(function(err) {
+      document.getElementById('responseBody').textContent = 'Fetch error: ' + err.message;
+      return 'Fetch error: ' + err.message;
     });
 }
 
