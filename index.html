@@ -546,6 +546,20 @@ function callBackend(action) {
     });
 }
 
+// ── CONTRACTOR DIRECTORY (loaded once at startup) ─────────────
+// jarvisContractors = "IVA01003 = Andries Roux\nIVA01033 = Ephraim Khoza\n..."
+var jarvisContractorDir = '';
+callBackend('getContractors').then(function(data){
+  if(data && data.contractors && data.contractors.length){
+    jarvisContractorDir = 'CONTRACTOR DIRECTORY (IC code → name):\n' +
+      data.contractors.map(c => c.icCode + ' = ' + c.name).join('\n');
+  }
+}).catch(function(){});
+
+function getContractorContext(){
+  return jarvisContractorDir ? jarvisContractorDir + '\n\n' : '';
+}
+
 // ── COMMENTS ─────────────────────────────────────────────────
 var showComments = true;
 function toggleComments() {
@@ -642,20 +656,23 @@ if (SpeechRec) {
       setTranscript('Microphone blocked.',false);
       endConversation(false);
     } else if(e.error==='no-speech'){
-      // Silence — arm timer and wait
-      if(conversationActive) armSilenceTimer();
-      else setTranscript('No speech detected.',false);
+      // Silence — arm timer and wait (don't reopen while speaking)
+      if(conversationActive && !isSpeaking) armSilenceTimer();
     } else {
-      if(conversationActive) setTimeout(openMic, 800);
+      if(conversationActive && !isSpeaking) setTimeout(openMic, 800);
     }
   };
 
   recognition.onend = () => {
     isListening = false;
-    // Only reopen mic if conversation is active AND Jarvis is not speaking
-    if(conversationActive && !isSpeaking){
-      setTimeout(openMic, 1000);
-    } else if(!conversationActive){
+    // Only reopen mic if conversation is active AND Jarvis is NOT speaking
+    // Use a longer delay to ensure TTS has definitely started before we check
+    if(conversationActive){
+      setTimeout(()=>{
+        if(conversationActive && !isSpeaking) openMic();
+        // if isSpeaking is true here, utt.onend will reopen the mic after speech ends
+      }, 1200);
+    } else {
       setOrbState('idle');
     }
   };
@@ -687,7 +704,13 @@ function setOrbState(state){
 // ── SPEECH SYNTHESIS ─────────────────────────────────────────
 function speak(text){
   if(!window.speechSynthesis) return;
+  // Set isSpeaking immediately so openMic() guards are effective
+  // even before the TTS 'onstart' event fires
   window.speechSynthesis.cancel();
+  isSpeaking = true;
+  setOrbState('speaking');
+  clearSilenceTimer();
+
   const utt = new SpeechSynthesisUtterance(text);
   const trySpeak = () => {
     const voices = window.speechSynthesis.getVoices();
@@ -708,13 +731,13 @@ function speak(text){
     utt.onend=()=>{
       isSpeaking=false;
       setOrbState('idle');
-      // Wait 1.8s after speaking ends before reopening mic — prevents echo pickup
-      if(conversationActive){ setTimeout(openMic, 1800); }
+      // Wait 2s after speaking ends before reopening mic — prevents echo pickup
+      if(conversationActive){ setTimeout(openMic, 2000); }
     };
     utt.onerror=()=>{
       isSpeaking=false;
       setOrbState('idle');
-      if(conversationActive){ setTimeout(openMic, 1800); }
+      if(conversationActive){ setTimeout(openMic, 2000); }
     };
     window.speechSynthesis.speak(utt);
   };
@@ -929,13 +952,14 @@ function handleCommand(text){
       var today=new Date().toDateString();
       var context='You are Jarvis, a professional British male AI business assistant for I.V.A., a South African used heavy vehicle and machinery brokerage. When speaking the business name always say I.V.A. — never IVA or Iets Van Alles. '+
         'Be concise, clear and professional. Speak in first person as Jarvis. Do not use markdown or bullet symbols — plain spoken sentences only. '+
-        'Today is '+today+'.\n\n';
+        'Today is '+today+'.\n\n'+
+        getContractorContext();
       if(leadsData&&!leadsData.error){
         var leads=leadsData.leads||[];
         var st={new:0,contacted:0,won:0,lost:0};
         leads.forEach(l=>{ var s=(l.status||'new').toLowerCase(); if(st[s]!==undefined) st[s]++; });
         context+='LEADS DATA: Total: '+leadsData.total+'. New:'+st.new+', Contacted:'+st.contacted+', Won:'+st.won+', Lost:'+st.lost+'.\n';
-        context+='Recent: '+leads.slice(0,30).map(l=>l.clientName+'('+l.status+','+l.timestamp+',IC:'+l.icCode+')').join(' | ')+'\n\n';
+        context+='Recent leads (contractor | client | status | date):\n'+leads.slice(0,30).map(l=>(l.icName||l.icCode)+' | '+l.clientName+' | '+(l.status||'New')+' | '+l.timestamp).join('\n')+'\n\n';
       }
       if(ctData&&!ctData.error){
         var cts=ctData.contractors||[];
@@ -953,11 +977,12 @@ function handleCommand(text){
       return askGemini(context);
     }).then(answer=>respond(answer,text)).catch(err=>respond('Problem fetching data: '+err.message, text));
   } else {
-    var prompt='You are Jarvis, a professional British male AI business assistant for I.V.A. Be concise and conversational — no markdown, no bullet symbols. ';
+    var prompt='You are Jarvis, a professional British male AI business assistant for I.V.A., a South African used heavy vehicle and machinery brokerage. When speaking the business name always say I.V.A. Be concise and conversational — no markdown, no bullet symbols.\n\n'+
+      getContractorContext();
     if(conversationHistory.length>0){
       prompt+='Conversation so far:\n'+conversationHistory.map(m=>(m.role==='user'?'User: ':'Jarvis: ')+m.text).join('\n')+'\n\n';
     }
-    prompt+='User now says: '+text+'\n\nRespond naturally as Jarvis, keeping context of the conversation.';
+    prompt+='User now says: '+text+'\n\nRespond naturally as Jarvis, keeping context of the conversation. If asked about an IC code, use the contractor directory above to give the name.';
     askGemini(prompt).then(answer=>respond(answer,text)).catch(err=>respond('I could not reach the AI: '+err.message, text));
   }
 }
