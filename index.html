@@ -833,7 +833,7 @@ function handleCommand(text){
         var st={new:0,contacted:0,won:0,lost:0};
         leads.forEach(l=>{ var s=(l.status||'new').toLowerCase(); if(st[s]!==undefined) st[s]++; });
         context+='LEADS DATA: Total: '+leadsData.total+'. New:'+st.new+', Contacted:'+st.contacted+', Won:'+st.won+', Lost:'+st.lost+'.\n';
-        context+='Recent: '+leads.slice(0,10).map(l=>l.clientName+'('+l.status+','+l.timestamp+',IC:'+l.icCode+')').join(' | ')+'\n\n';
+        context+='Recent: '+leads.slice(0,30).map(l=>l.clientName+'('+l.status+','+l.timestamp+',IC:'+l.icCode+')').join(' | ')+'\n\n';
       }
       if(ctData&&!ctData.error){
         var cts=ctData.contractors||[];
