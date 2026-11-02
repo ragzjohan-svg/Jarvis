@@ -528,23 +528,24 @@ const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbyK2EhkwwKQJhl_1
 
 function askGemini(prompt) {
   var safe = prompt.length > 3000 ? prompt.slice(0, 3000) : prompt;
-  var url = JARVIS_BACKEND + '?action=askGemini&prompt=' + encodeURIComponent(safe);
-  document.getElementById('responseBody').textContent = 'Calling backend… (' + url.length + ' chars)';
-  return fetch(url, { method:'GET', redirect:'follow' })
-    .then(r => {
-      document.getElementById('responseBody').textContent = 'Got HTTP ' + r.status + ', reading…';
-      return r.text();
-    })
-    .then(text => {
-      document.getElementById('responseBody').textContent = 'Raw: ' + text.slice(0, 200);
-      var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
-      try { var d = JSON.parse(json); return d.answer || d.error || 'No response.'; }
-      catch(e) { return 'Parse error: ' + text.slice(0, 150); }
-    })
-    .catch(function(err) {
-      document.getElementById('responseBody').textContent = 'Fetch error: ' + err.message;
-      return 'Fetch error: ' + err.message;
-    });
+  return new Promise(function(resolve) {
+    var cbName = 'jarvisCb_' + Date.now();
+    var script = document.createElement('script');
+    var timer = setTimeout(function() {
+      delete window[cbName];
+      script.remove();
+      resolve('Request timed out. Please try again.');
+    }, 20000);
+    window[cbName] = function(data) {
+      clearTimeout(timer);
+      delete window[cbName];
+      script.remove();
+      resolve(data.answer || data.error || 'No response.');
+    };
+    var url = JARVIS_BACKEND + '?action=askGemini&callback=' + cbName + '&prompt=' + encodeURIComponent(safe);
+    script.src = url;
+    document.head.appendChild(script);
+  });
 }
 
 function callBackend(action) {
