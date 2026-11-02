@@ -611,7 +611,7 @@ let conversationHistory = [];
 let silenceTimer = null;
 let micLockTimer = null;
 const SILENCE_MS  = 7000;
-const MIC_COOLDOWN = 2500; // ms to wait after speech ends before mic reopens
+const MIC_COOLDOWN = 4000; // ms to wait after speech ends before mic reopens
 
 function clearSilenceTimer(){ if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer=null; } }
 function clearMicLock(){ if(micLockTimer){ clearTimeout(micLockTimer); micLockTimer=null; } }
@@ -619,6 +619,8 @@ function clearMicLock(){ if(micLockTimer){ clearTimeout(micLockTimer); micLockTi
 function lockMic(){
   micLocked = true;
   clearMicLock();
+  // Actively stop recognition so it can't pick up TTS audio
+  if(recognition && isListening){ try{ recognition.stop(); }catch(e){} }
   // Safety release — if onend never fires (bug), unlock after 60s
   micLockTimer = setTimeout(()=>{ micLocked=false; }, 60000);
 }
