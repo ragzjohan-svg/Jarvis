@@ -524,7 +524,7 @@ function checkPin() {
 document.getElementById('pinInput').addEventListener('keydown', e => { if(e.key==='Enter') checkPin(); });
 
 // ── BACKEND ──────────────────────────────────────────────────
-const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbwnXKSZ-cVchEdwg4FE5oY9F8N0zjZQNxcQkiyi_E7kfvruAm9yD187PMKtcZ9Kg0VbLw/exec';
+const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbyK2EhkwwKQJhl_1A4ZxZwc-XYXHVk0P7NNPiJ8RFcUK7sWnxgGKCnLlglU7Yg5MKdz/exec';
 
 function askGemini(prompt) {
   // POST the prompt so long prompts (contractor directory + history) don't hit URL length limits
