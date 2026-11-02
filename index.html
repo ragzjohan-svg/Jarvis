@@ -513,7 +513,7 @@ function checkPin() {
   const val = document.getElementById('pinInput').value.trim();
   if (val === JARVIS_PIN) {
     document.getElementById('pinOverlay').style.display = 'none';
-    speak("Good " + getTimeOfDay() + ". I'm Jarvis, your IVA business assistant. How can I help you?");
+    speak("Good " + getTimeOfDay() + ". I'm Jarvis, your Iets Van Alles business assistant. How can I help you?");
   } else {
     document.getElementById('pinError').textContent = 'Incorrect PIN. Try again.';
     document.getElementById('pinInput').value = '';
@@ -918,7 +918,7 @@ function handleCommand(text){
     Promise.all(fetches).then(function(results){
       var leadsData=results[0], ctData=results[1], finData=results[2];
       var today=new Date().toDateString();
-      var context='You are Jarvis, a professional British male AI business assistant for IVA — a South African used heavy vehicle and machinery brokerage. '+
+      var context='You are Jarvis, a professional British male AI business assistant for Iets Van Alles, a South African used heavy vehicle and machinery brokerage. '+
         'Be concise, clear and professional. Speak in first person as Jarvis. Do not use markdown or bullet symbols — plain spoken sentences only. '+
         'Today is '+today+'.\n\n';
       if(leadsData&&!leadsData.error){
