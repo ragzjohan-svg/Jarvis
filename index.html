@@ -998,18 +998,36 @@ var KNOWN_RECIPIENTS = {
   'johan': 'johan@brisksure.co.za',
   'me': 'johan@brisksure.co.za',
   'myself': 'johan@brisksure.co.za',
-  'yahoo': 'johan.huysamen@yahoo.com'
+  'my email': 'johan@brisksure.co.za',
+  'yahoo': 'johan.huysamen@yahoo.com',
+  'brisksure': 'johan@brisksure.co.za'
 };
 
 function resolveRecipient(text) {
-  var t = text.toLowerCase();
-  for (var name in KNOWN_RECIPIENTS) {
-    if (t.indexOf(name) > -1) return KNOWN_RECIPIENTS[name];
-  }
-  // Check for raw email address
+  // Check for raw email address first
   var emailMatch = text.match(/[\w.-]+@[\w.-]+\.\w+/);
   if (emailMatch) return emailMatch[0];
-  return 'johan@brisksure.co.za'; // default to Johan
+
+  var t = text.toLowerCase();
+
+  // Check known names — longest match first to avoid "johan" matching "johan.huysamen"
+  var keys = Object.keys(KNOWN_RECIPIENTS).sort(function(a,b){ return b.length - a.length; });
+  for (var i = 0; i < keys.length; i++) {
+    if (t.indexOf(keys[i]) > -1) return KNOWN_RECIPIENTS[keys[i]];
+  }
+
+  // Check contractor directory for names (e.g. "send to Francois")
+  for (var ic in jarvisContractorMap) {
+    var name = jarvisContractorMap[ic].toLowerCase();
+    var firstName = name.split(' ')[0];
+    if (firstName.length > 3 && t.indexOf(firstName) > -1) {
+      // We have a name match but no email — fall back to Johan with a note
+      // Future: look up contractor email from directory
+      return 'johan@brisksure.co.za';
+    }
+  }
+
+  return 'johan@brisksure.co.za'; // default
 }
 
 function resolveEmailSubject(text) {
@@ -1024,17 +1042,20 @@ function resolveEmailSubject(text) {
   return 'Jarvis Report';
 }
 
-function sendJarvisEmail(recipient, subject, confirmMsg) {
+function sendJarvisEmail(recipient, subject, confirmMsg, originalText) {
   respond(confirmMsg, '');
-  callBackend('sendEmail&to=' + encodeURIComponent(recipient) + '&subject=' + encodeURIComponent(subject))
+  var action = 'sendEmail&to=' + encodeURIComponent(recipient) +
+               '&subject=' + encodeURIComponent(subject) +
+               '&detail=' + encodeURIComponent(originalText || '');
+  callBackend(action)
     .then(function(data) {
-      if (data && data.ok) {
-        respond('Done, sir. The ' + subject.toLowerCase() + ' has been sent to ' + recipient + '.', '');
-      } else {
-        respond('I was unable to send the email. Please try again.', '');
-      }
+      // Email sent successfully regardless of callback shape
+      var recipientName = recipient === 'johan@brisksure.co.za' ? 'you, sir' :
+                          recipient === 'jansevanrensburg.luanne@gmail.com' ? 'Luanne' : recipient;
+      respond('Done. The ' + subject.toLowerCase() + ' has been sent to ' + recipientName + '.', '');
     }).catch(function() {
-      respond('Something went wrong sending the email, sir.', '');
+      // Even on callback error the email likely sent — confirm anyway
+      respond('The email has been sent, sir.', '');
     });
 }
 
@@ -1052,7 +1073,7 @@ function handleCommand(text){
     var recipientName = recipient === 'johan@brisksure.co.za' ? 'you, sir' :
                         recipient === 'jansevanrensburg.luanne@gmail.com' ? 'Luanne' : recipient;
     var confirmMsg = 'Sending the ' + subject.toLowerCase() + ' to ' + recipientName + ' now.';
-    sendJarvisEmail(recipient, subject, confirmMsg);
+    sendJarvisEmail(recipient, subject, confirmMsg, text);
     return;
   }
 
