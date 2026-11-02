@@ -976,11 +976,12 @@ function handleCommand(text){
   setOrbState('thinking');
   document.getElementById('responseBody').textContent = 'Thinking…';
 
-  // Helper: fetch with a 10s timeout so a hanging request never blocks everything
-  function fetchWithTimeout(action) {
+  // Helper: fetch with a timeout so a hanging request never blocks everything
+  function fetchWithTimeout(action, ms) {
+    ms = ms || 6000;
     return Promise.race([
       callBackend(action),
-      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, 10000); })
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, ms); })
     ]).catch(function(){ return null; });
   }
 
@@ -991,9 +992,9 @@ function handleCommand(text){
   var needsOverview    = /overview|briefing|summary|how are we|what.s happening|how.s business/.test(t);
 
   var fetches = [
-    (needsLeads||needsOverview)       ? fetchWithTimeout('getLeads')       : Promise.resolve(null),
-    (needsContractors||needsOverview) ? fetchWithTimeout('getContractors') : Promise.resolve(null),
-    (needsFinancials||needsOverview)  ? fetchWithTimeout('getSummary')     : Promise.resolve(null)
+    (needsLeads||needsOverview)       ? fetchWithTimeout('getLeads', 8000)       : Promise.resolve(null),
+    (needsContractors||needsOverview) ? fetchWithTimeout('getContractors', 8000) : Promise.resolve(null),
+    (needsFinancials||needsOverview)  ? fetchWithTimeout('getSummary', 5000)     : Promise.resolve(null)
   ];
 
   Promise.all(fetches).then(function(results){
@@ -1006,11 +1007,9 @@ function handleCommand(text){
       'Always say "I.V.A." never "IVA". Speak like a calm, sharp British male assistant. '+
       'Plain sentences only — no bullet points, no asterisks, no markdown. '+
       'Keep replies under 60 words unless asked for detail. '+
-      'IMPORTANT: You can ONLY report information from the data provided. '+
-      'You CANNOT send messages, emails, WhatsApps, make calls, set reminders, access calendars, or take any action outside this conversation. '+
-      'If asked to do something you cannot do, say so plainly in one sentence and offer what you CAN tell them instead. '+
-      'Never make up capabilities you do not have. '+
-      'Stay strictly on topic — do not bring up previous unrelated topics. '+
+      'You are intelligent, sharp and proactive — give insights, analysis and recommendations freely. '+
+      'You CANNOT send messages, emails, WhatsApps or make calls — if asked, say so in one sentence then move on. '+
+      'Never claim you have just sent something or taken an action outside this conversation. '+
       'Today: '+new Date().toDateString()+'.\n\n';
 
     // ── CONTRACTOR DIRECTORY — always included ──
@@ -1038,6 +1037,12 @@ function handleCommand(text){
     if(conversationHistory.length>0){
       sys += 'CHAT HISTORY:\n'+
         conversationHistory.slice(-8).map(m=>(m.role==='user'?'Johan: ':'Jarvis: ')+m.text).join('\n')+'\n\n';
+    }
+
+    // ── DATA AVAILABILITY NOTE ──
+    var hasData = (leadsData&&!leadsData.error) || (ctData&&!ctData.error) || (finData&&finData.summary);
+    if(!hasData && (needsLeads||needsContractors||needsFinancials||needsOverview)){
+      sys += 'NOTE: Live business data could not be loaded right now. Acknowledge this briefly and ask Johan to try again.\n\n';
     }
 
     // ── THE ACTUAL REQUEST ──
