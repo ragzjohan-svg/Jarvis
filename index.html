@@ -992,11 +992,69 @@ function addHistory(q,a){
   if(h.children.length>5) h.removeChild(h.lastChild);
 }
 
+// ── EMAIL SENDER ──────────────────────────────────────────────
+var KNOWN_RECIPIENTS = {
+  'luanne': 'jansevanrensburg.luanne@gmail.com',
+  'johan': 'johan@brisksure.co.za',
+  'me': 'johan@brisksure.co.za',
+  'myself': 'johan@brisksure.co.za',
+  'yahoo': 'johan.huysamen@yahoo.com'
+};
+
+function resolveRecipient(text) {
+  var t = text.toLowerCase();
+  for (var name in KNOWN_RECIPIENTS) {
+    if (t.indexOf(name) > -1) return KNOWN_RECIPIENTS[name];
+  }
+  // Check for raw email address
+  var emailMatch = text.match(/[\w.-]+@[\w.-]+\.\w+/);
+  if (emailMatch) return emailMatch[0];
+  return 'johan@brisksure.co.za'; // default to Johan
+}
+
+function resolveEmailSubject(text) {
+  var t = text.toLowerCase();
+  if (/overview|briefing|how are we|business summary/.test(t)) return 'Business overview';
+  if (/lead/.test(t)) return 'Leads report';
+  if (/contractor|agent/.test(t)) return 'Contractor stats';
+  if (/financial|finance|income|expense|balance/.test(t)) return 'Financial summary';
+  // Extract subject after "email" keyword
+  var match = text.match(/email.*?(?:me|luanne|johan)?\s+(?:the\s+)?(.+)/i);
+  if (match) return match[1].trim();
+  return 'Jarvis Report';
+}
+
+function sendJarvisEmail(recipient, subject, confirmMsg) {
+  respond(confirmMsg, '');
+  callBackend('sendEmail&to=' + encodeURIComponent(recipient) + '&subject=' + encodeURIComponent(subject))
+    .then(function(data) {
+      if (data && data.ok) {
+        respond('Done, sir. The ' + subject.toLowerCase() + ' has been sent to ' + recipient + '.', '');
+      } else {
+        respond('I was unable to send the email. Please try again.', '');
+      }
+    }).catch(function() {
+      respond('Something went wrong sending the email, sir.', '');
+    });
+}
+
 // ── COMMAND ROUTER ────────────────────────────────────────────
 function handleCommand(text){
   const t = text.toLowerCase().trim();
   setOrbState('thinking');
   document.getElementById('responseBody').textContent = 'Thinking…';
+
+  // ── EMAIL COMMAND DETECTION ──
+  var isEmailCmd = /email|send.*report|mail.*me|send.*overview|send.*leads|send.*contractor|send.*financial/.test(t);
+  if (isEmailCmd) {
+    var recipient = resolveRecipient(text);
+    var subject   = resolveEmailSubject(text);
+    var recipientName = recipient === 'johan@brisksure.co.za' ? 'you, sir' :
+                        recipient === 'jansevanrensburg.luanne@gmail.com' ? 'Luanne' : recipient;
+    var confirmMsg = 'Sending the ' + subject.toLowerCase() + ' to ' + recipientName + ' now.';
+    sendJarvisEmail(recipient, subject, confirmMsg);
+    return;
+  }
 
   // Helper: fetch with a timeout so a hanging request never blocks everything
   function fetchWithTimeout(action, ms) {
@@ -1030,8 +1088,8 @@ function handleCommand(text){
       'Plain sentences only — no bullet points, no asterisks, no markdown. '+
       'Keep replies under 60 words unless asked for detail. '+
       'You are intelligent, sharp and proactive — give insights, analysis and recommendations freely. '+
-      'You CANNOT send messages, emails, WhatsApps or make calls — if asked, say so in one sentence then move on. '+
-      'Never claim you have just sent something or taken an action outside this conversation. '+
+      'You CAN send emails on Johan\'s behalf — if asked to email a report or overview, confirm you are sending it. '+
+      'You CANNOT send WhatsApp messages or make calls — if asked, say so in one sentence then move on. '+
       'Today: '+new Date().toDateString()+'.\n\n';
 
     // ── CONTRACTOR DIRECTORY — always included ──
