@@ -527,28 +527,15 @@ document.getElementById('pinInput').addEventListener('keydown', e => { if(e.key=
 const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbyK2EhkwwKQJhl_1A4ZxZwc-XYXHVk0P7NNPiJ8RFcUK7sWnxgGKCnLlglU7Yg5MKdz/exec';
 
 function askGemini(prompt) {
-  // POST the prompt so long prompts (contractor directory + history) don't hit URL length limits
-  return fetch(JARVIS_BACKEND, {
-    method: 'POST',
-    redirect: 'follow',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'askGemini', prompt: prompt })
-  })
+  // Trim prompt to stay well under URL limits — contractor dir is injected separately
+  var safe = prompt.length > 3000 ? prompt.slice(0, 3000) : prompt;
+  var url = JARVIS_BACKEND + '?action=askGemini&prompt=' + encodeURIComponent(safe);
+  return fetch(url, { method:'GET', redirect:'follow' })
     .then(r => r.text())
     .then(text => {
-      try { var d = JSON.parse(text); return d.answer || d.error || 'No response.'; }
-      catch(e) { return 'Could not parse response.'; }
-    })
-    .catch(function(err) {
-      // Fallback: try GET with a shortened prompt (first 1500 chars)
-      var shortUrl = JARVIS_BACKEND + '?action=askGemini&prompt=' + encodeURIComponent(prompt.slice(0, 1500));
-      return fetch(shortUrl, { method:'GET', redirect:'follow' })
-        .then(r => r.text())
-        .then(text => {
-          var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
-          try { var d = JSON.parse(json); return d.answer || d.error || 'No response.'; }
-          catch(e) { return 'No response.'; }
-        });
+      var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
+      try { var d = JSON.parse(json); return d.answer || d.error || 'No response.'; }
+      catch(e) { return 'Could not parse response: ' + text.slice(0,100); }
     });
 }
 
@@ -562,17 +549,29 @@ function callBackend(action) {
 }
 
 // ── CONTRACTOR DIRECTORY (loaded once at startup) ─────────────
-var jarvisContractorDir = '';
+// Stored as a lookup map so we resolve names in JS, NOT by sending the full list to Gemini
+var jarvisContractorMap = {}; // ic → name
 callBackend('getDirectory').then(function(data){
   if(data && data.directory && data.directory.length){
-    jarvisContractorDir = 'CONTRACTOR DIRECTORY — use this to match any IC code to a name:\n' +
-      data.directory.map(function(c){ return c.ic + ' = ' + c.name; }).join('\n');
+    data.directory.forEach(function(c){
+      jarvisContractorMap[c.ic.toUpperCase()] = c.name;
+    });
   }
 }).catch(function(){});
 
-function getContractorContext(){
-  return jarvisContractorDir ? jarvisContractorDir + '\n\n' : '';
+// Resolve an IC code to a name locally (no URL needed)
+function resolveIC(ic){
+  if(!ic) return ic;
+  var key = String(ic).toUpperCase().trim().replace(/\s+/g,'').replace(/@/g,'');
+  if(jarvisContractorMap[key]) return jarvisContractorMap[key];
+  // digit-only fallback e.g. "01033" → "IVA01033"
+  var digits = key.replace(/[^0-9]/g,'');
+  if(digits && jarvisContractorMap['IVA'+digits]) return jarvisContractorMap['IVA'+digits];
+  return ic; // return original if not found
 }
+
+// No longer injected into prompt — names resolved locally instead
+function getContractorContext(){ return ''; }
 
 // ── COMMENTS ─────────────────────────────────────────────────
 var showComments = true;
@@ -995,7 +994,7 @@ function handleCommand(text){
       var st = {new:0,contacted:0,won:0,lost:0};
       leads.forEach(l=>{ var s=(l.status||'new').toLowerCase(); if(st[s]!==undefined) st[s]++; });
       sys += 'LEADS: total='+leadsData.total+' new='+st.new+' contacted='+st.contacted+' won='+st.won+' lost='+st.lost+'\n';
-      sys += leads.slice(0,20).map(l=>'- '+(l.icName||l.icCode)+' | '+l.clientName+' | '+l.status+' | '+l.timestamp).join('\n')+'\n\n';
+      sys += leads.slice(0,20).map(l=>'- '+(resolveIC(l.icCode)||l.icCode)+' | '+l.clientName+' | '+l.status+' | '+l.timestamp).join('\n')+'\n\n';
     }
     if(ctData && !ctData.error){
       var cts = ctData.contractors||[];
@@ -1010,7 +1009,7 @@ function handleCommand(text){
     // ── CONVERSATION HISTORY — last 8 exchanges ──
     if(conversationHistory.length>0){
       sys += 'CHAT HISTORY:\n'+
-        conversationHistory.slice(-16).map(m=>(m.role==='user'?'Johan: ':'Jarvis: ')+m.text).join('\n')+'\n\n';
+        conversationHistory.slice(-8).map(m=>(m.role==='user'?'Johan: ':'Jarvis: ')+m.text).join('\n')+'\n\n';
     }
 
     // ── THE ACTUAL REQUEST ──
