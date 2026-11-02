@@ -579,8 +579,12 @@ function resolveIC(ic){
   return ic; // return original if not found
 }
 
-// No longer injected into prompt — names resolved locally instead
-function getContractorContext(){ return ''; }
+// Compact directory injected into every Gemini prompt so it can answer "who is IVA01033?"
+function getContractorContext(){
+  var entries = Object.keys(jarvisContractorMap);
+  if(!entries.length) return '';
+  return 'IC CODES: '+entries.map(function(k){ return k+'='+jarvisContractorMap[k]; }).join(', ')+'\n\n';
+}
 
 // ── COMMENTS ─────────────────────────────────────────────────
 var showComments = true;
@@ -1011,7 +1015,7 @@ function handleCommand(text){
       var st = {new:0,contacted:0,won:0,lost:0};
       leads.forEach(l=>{ var s=(l.status||'new').toLowerCase(); if(st[s]!==undefined) st[s]++; });
       sys += 'LEADS: total='+leadsData.total+' new='+st.new+' contacted='+st.contacted+' won='+st.won+' lost='+st.lost+'\n';
-      sys += leads.slice(0,20).map(l=>'- '+(resolveIC(l.icCode)||l.icCode)+' | '+l.clientName+' | '+l.status+' | '+l.timestamp).join('\n')+'\n\n';
+      sys += leads.slice(0,20).map(l=>'- '+(l.icName||resolveIC(l.icCode)||l.icCode)+' | '+l.clientName+' | '+l.status+' | '+l.timestamp).join('\n')+'\n\n';
     }
     if(ctData && !ctData.error){
       var cts = ctData.contractors||[];
