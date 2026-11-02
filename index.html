@@ -355,7 +355,7 @@
         <div class="globe-ring"></div>
         <div class="globe-hit"></div>
       </div>
-      <div class="globe-label" id="orbLabel">TAP TO SPEAK</div>
+      <div class="globe-label" id="orbLabel">TAP TO START</div>
     </div>
 
   </div>
@@ -553,9 +553,48 @@ function toggleComments() {
   btn.classList.toggle('active', showComments);
 }
 
-// ── SPEECH RECOGNITION ───────────────────────────────────────
+// ── CONVERSATION MODE ─────────────────────────────────────────
+// conversationActive = free-flowing loop (tap to start, tap or "stop" to end)
+// isListening        = mic is open right now
+// isSpeaking         = TTS is playing right now
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null, isListening = false, isSpeaking = false;
+let conversationActive = false;
+let silenceTimer = null;
+const SILENCE_MS = 8000; // idle timeout before loop stops
+
+function clearSilenceTimer(){ if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer=null; } }
+function startSilenceTimer(){
+  clearSilenceTimer();
+  silenceTimer = setTimeout(()=>{
+    if(conversationActive && !isSpeaking){
+      endConversation();
+      setTranscript('Conversation ended — silence timeout.',false);
+    }
+  }, SILENCE_MS);
+}
+
+function startConversation(){
+  conversationActive = true;
+  document.getElementById('orbLabel').style.color = 'var(--gold)';
+  setTranscript('Conversation started. Listening…', false);
+  startListeningLoop();
+}
+
+function endConversation(){
+  conversationActive = false;
+  clearSilenceTimer();
+  isListening = false;
+  if(recognition) try{ recognition.stop(); }catch(e){}
+  setOrbState('idle');
+  setTranscript('Tap globe to start a new conversation.',false);
+}
+
+function startListeningLoop(){
+  if(!conversationActive || isSpeaking) return;
+  if(!recognition) return;
+  try{ recognition.start(); } catch(e){}
+}
 
 if (SpeechRec) {
   recognition = new SpeechRec();
@@ -563,39 +602,82 @@ if (SpeechRec) {
   recognition.continuous = false;
   recognition.interimResults = true;
 
-  recognition.onstart = () => { isListening=true; setOrbState('listening'); setTranscript('Listening…',false); };
+  recognition.onstart = () => {
+    isListening = true;
+    setOrbState('listening');
+    setTranscript('Listening…', false);
+    startSilenceTimer(); // start 8s countdown
+  };
+
   recognition.onresult = e => {
+    clearSilenceTimer();
     let interim='', final='';
     for(let i=e.resultIndex;i<e.results.length;i++){
       if(e.results[i].isFinal) final+=e.results[i][0].transcript;
       else interim+=e.results[i][0].transcript;
     }
-    setTranscript(final||interim,!!(final||interim));
-    if(final){ stopListening(); handleCommand(final.trim()); }
+    setTranscript(final||interim, !!(final||interim));
+    if(final){
+      isListening = false;
+      try{ recognition.stop(); }catch(e){}
+      const said = final.trim();
+      // Wake words to end conversation
+      if(/^(stop|goodbye jarvis|bye jarvis|end conversation|stop listening|that's all jarvis|thats all jarvis)/i.test(said)){
+        endConversation();
+        speak("Goodbye. I'll be here when you need me.");
+        return;
+      }
+      handleCommand(said);
+    }
   };
+
   recognition.onerror = e => {
-    stopListening();
-    if(e.error==='no-speech') setTranscript('No speech detected.',false);
-    else if(e.error==='not-allowed') setTranscript('Microphone blocked.',false);
-    else setTranscript('Error: '+e.error,false);
+    isListening = false;
+    clearSilenceTimer();
+    if(e.error==='no-speech'){
+      // Counts as silence — timer already fired or will fire
+      if(conversationActive){ startSilenceTimer(); }
+      else { setTranscript('No speech detected.',false); }
+    } else if(e.error==='not-allowed'){
+      setTranscript('Microphone blocked.',false);
+      endConversation();
+    } else {
+      setTranscript('Error: '+e.error,false);
+    }
   };
-  recognition.onend = () => { if(isListening) stopListening(); };
+
+  recognition.onend = () => {
+    isListening = false;
+    // If conversation is still active and Jarvis isn't speaking, loop back
+    if(conversationActive && !isSpeaking){
+      setTimeout(startListeningLoop, 400);
+    } else {
+      setOrbState('idle');
+    }
+  };
 } else {
   document.getElementById('noSpeechWarn').style.display='block';
 }
 
+// Globe tap: toggle conversation on/off
 function toggleListen(){
-  if(isSpeaking){ window.speechSynthesis.cancel(); isSpeaking=false; }
-  if(isListening) stopListening(); else startListening();
+  if(conversationActive){
+    // Stop everything
+    if(isSpeaking){ window.speechSynthesis.cancel(); isSpeaking=false; }
+    endConversation();
+  } else {
+    if(isSpeaking){ window.speechSynthesis.cancel(); isSpeaking=false; }
+    startConversation();
+  }
 }
 function startListening(){ if(!recognition) return; try{ recognition.start(); }catch(e){} }
-function stopListening(){ isListening=false; setOrbState('idle'); if(recognition) try{ recognition.stop(); }catch(e){} }
+function stopListening(){ isListening=false; setOrbState('idle'); if(recognition) try{ recognition.stop(); }catch(e){} conversationActive=false; clearSilenceTimer(); }
 
 function setOrbState(state){
   const orb = document.getElementById('orb');
   const label = document.getElementById('orbLabel');
   orb.className = 'globe-container'+(state!=='idle'?' '+state:'');
-  const labels = { listening:'LISTENING…', thinking:'THINKING…', speaking:'SPEAKING…', idle:'TAP TO SPEAK' };
+  const labels = { listening:'LISTENING…', thinking:'THINKING…', speaking:'SPEAKING…', idle: conversationActive ? 'READY…' : 'TAP TO START' };
   label.textContent = labels[state]||'TAP TO SPEAK';
   globeState = state;
 }
@@ -620,9 +702,20 @@ function speak(text){
     if(maleVoice) utt.voice = maleVoice;
     utt.lang = maleVoice?maleVoice.lang:'en-GB';
     utt.rate=0.95; utt.pitch=0.9;
-    utt.onstart=()=>{ isSpeaking=true; setOrbState('speaking'); };
-    utt.onend=()=>{ isSpeaking=false; setOrbState('idle'); };
-    utt.onerror=()=>{ isSpeaking=false; setOrbState('idle'); };
+    utt.onstart=()=>{ isSpeaking=true; setOrbState('speaking'); clearSilenceTimer(); };
+    utt.onend=()=>{
+      isSpeaking=false;
+      setOrbState('idle');
+      if(conversationActive){
+        // Brief pause then listen again
+        setTimeout(startListeningLoop, 600);
+      }
+    };
+    utt.onerror=()=>{
+      isSpeaking=false;
+      setOrbState('idle');
+      if(conversationActive){ setTimeout(startListeningLoop, 600); }
+    };
     window.speechSynthesis.speak(utt);
   };
   if(window.speechSynthesis.getVoices().length) trySpeak();
