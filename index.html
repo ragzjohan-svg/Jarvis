@@ -513,7 +513,9 @@ function checkPin() {
   const val = document.getElementById('pinInput').value.trim();
   if (val === JARVIS_PIN) {
     document.getElementById('pinOverlay').style.display = 'none';
-    speak("Good " + getTimeOfDay() + ". I'm Jarvis, your Iets Van Alles business assistant. How can I help you?");
+    const greeting = "Good " + getTimeOfDay() + ". I'm Jarvis, your I.V.A. business assistant. Tap the globe and start talking.";
+    document.getElementById('responseBody').textContent = greeting;
+    speak(greeting);
   } else {
     document.getElementById('pinError').textContent = 'Incorrect PIN. Try again.';
     document.getElementById('pinInput').value = '';
@@ -553,9 +555,53 @@ function toggleComments() {
   btn.classList.toggle('active', showComments);
 }
 
-// ── SPEECH RECOGNITION ───────────────────────────────────────
+// ── CONVERSATION ENGINE ───────────────────────────────────────
+// conversationHistory = [{role:'user'|'jarvis', text:'...'}]
+// conversationActive  = mic loop is running
+// isListening         = mic is open right now
+// isSpeaking          = TTS playing right now
+
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null, isListening = false, isSpeaking = false;
+let conversationActive = false;
+let conversationHistory = [];  // full chat memory sent to Gemini each turn
+let silenceTimer = null;
+const SILENCE_MS = 6000;
+
+function clearSilenceTimer(){ if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer=null; } }
+function armSilenceTimer(){
+  clearSilenceTimer();
+  silenceTimer = setTimeout(()=>{
+    if(conversationActive && !isSpeaking && !isListening){
+      endConversation(false); // silent end — no spoken goodbye
+    }
+  }, SILENCE_MS);
+}
+
+function startConversation(){
+  conversationActive = true;
+  conversationHistory = [];
+  setOrbState('listening');
+  setTranscript('Tap globe to end conversation.',false);
+  openMic();
+}
+
+function endConversation(say){
+  conversationActive = false;
+  clearSilenceTimer();
+  if(recognition) try{ recognition.stop(); }catch(e){}
+  if(isSpeaking){ window.speechSynthesis.cancel(); isSpeaking=false; }
+  isListening = false;
+  setOrbState('idle');
+  setTranscript('Tap globe to start a conversation.',false);
+  if(say) speak("Goodbye. I'll be here when you need me.");
+}
+
+function openMic(){
+  if(!conversationActive || isSpeaking || isListening) return;
+  if(!recognition) return;
+  try{ recognition.start(); } catch(e){}
+}
 
 if (SpeechRec) {
   recognition = new SpeechRec();
@@ -563,33 +609,71 @@ if (SpeechRec) {
   recognition.continuous = false;
   recognition.interimResults = true;
 
-  recognition.onstart = () => { isListening=true; setOrbState('listening'); setTranscript('Listening…',false); };
+  recognition.onstart = () => {
+    isListening = true;
+    setOrbState('listening');
+    setTranscript('Listening…', false);
+  };
+
   recognition.onresult = e => {
+    clearSilenceTimer();
     let interim='', final='';
     for(let i=e.resultIndex;i<e.results.length;i++){
       if(e.results[i].isFinal) final+=e.results[i][0].transcript;
       else interim+=e.results[i][0].transcript;
     }
-    setTranscript(final||interim,!!(final||interim));
-    if(final){ stopListening(); handleCommand(final.trim()); }
+    setTranscript(final||interim, !!(final||interim));
+    if(final){
+      isListening = false;
+      try{ recognition.stop(); }catch(e){}
+      const said = final.trim();
+      // Stop words
+      if(/^(stop|goodbye jarvis|bye jarvis|end conversation|that'?s all jarvis|stop listening)/i.test(said)){
+        endConversation(true);
+        return;
+      }
+      handleCommand(said);
+    }
   };
+
   recognition.onerror = e => {
-    stopListening();
-    if(e.error==='no-speech') setTranscript('No speech detected.',false);
-    else if(e.error==='not-allowed') setTranscript('Microphone blocked.',false);
-    else setTranscript('Error: '+e.error,false);
+    isListening = false;
+    if(e.error==='not-allowed'){
+      setTranscript('Microphone blocked.',false);
+      endConversation(false);
+    } else if(e.error==='no-speech'){
+      // Silence — arm timer and wait
+      if(conversationActive) armSilenceTimer();
+      else setTranscript('No speech detected.',false);
+    } else {
+      if(conversationActive) setTimeout(openMic, 800);
+    }
   };
-  recognition.onend = () => { if(isListening) stopListening(); };
+
+  recognition.onend = () => {
+    isListening = false;
+    // If conversation active and Jarvis isn't speaking, reopen mic after short pause
+    if(conversationActive && !isSpeaking){
+      setTimeout(openMic, 500);
+    } else if(!conversationActive){
+      setOrbState('idle');
+    }
+  };
 } else {
   document.getElementById('noSpeechWarn').style.display='block';
 }
 
+// Globe tap — toggle conversation
 function toggleListen(){
-  if(isSpeaking){ window.speechSynthesis.cancel(); isSpeaking=false; }
-  if(isListening) stopListening(); else startListening();
+  if(conversationActive){
+    endConversation(false);
+  } else {
+    if(isSpeaking){ window.speechSynthesis.cancel(); isSpeaking=false; }
+    startConversation();
+  }
 }
-function startListening(){ if(!recognition) return; try{ recognition.start(); }catch(e){} }
-function stopListening(){ isListening=false; setOrbState('idle'); if(recognition) try{ recognition.stop(); }catch(e){} }
+function startListening(){ openMic(); }
+function stopListening(){ isListening=false; setOrbState(conversationActive?'listening':'idle'); if(recognition) try{ recognition.stop(); }catch(e){} }
 
 function setOrbState(state){
   const orb = document.getElementById('orb');
@@ -620,9 +704,17 @@ function speak(text){
     if(maleVoice) utt.voice = maleVoice;
     utt.lang = maleVoice?maleVoice.lang:'en-GB';
     utt.rate=0.95; utt.pitch=0.9;
-    utt.onstart=()=>{ isSpeaking=true; setOrbState('speaking'); };
-    utt.onend=()=>{ isSpeaking=false; setOrbState('idle'); };
-    utt.onerror=()=>{ isSpeaking=false; setOrbState('idle'); };
+    utt.onstart=()=>{ isSpeaking=true; setOrbState('speaking'); clearSilenceTimer(); };
+    utt.onend=()=>{
+      isSpeaking=false;
+      setOrbState('idle');
+      if(conversationActive){ setTimeout(openMic, 500); } // reopen mic after speaking
+    };
+    utt.onerror=()=>{
+      isSpeaking=false;
+      setOrbState('idle');
+      if(conversationActive){ setTimeout(openMic, 500); }
+    };
     window.speechSynthesis.speak(utt);
   };
   if(window.speechSynthesis.getVoices().length) trySpeak();
@@ -789,7 +881,16 @@ function getTimeOfDay(){ const h=new Date().getHours(); return h<12?'morning':h<
 function formatRand(val){ if(val==null||val==='') return 'R 0.00'; return 'R '+Number(val).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 function setTranscript(text,hasText){ const el=document.getElementById('transcript'); el.textContent=text||'Listening for your command…'; el.className='transcript'+(hasText?' has-text':''); }
 function showLoading(){ document.getElementById('responseBody').textContent='Fetching data…'; setOrbState('thinking'); }
-function respond(text){ document.getElementById('responseBody').textContent=text; addHistory(document.getElementById('transcript').textContent,text); setOrbState('idle'); speak(text); }
+function respond(text, userSaid){
+  document.getElementById('responseBody').textContent=text;
+  // Store in conversation memory
+  if(userSaid) conversationHistory.push({role:'user', text:userSaid});
+  conversationHistory.push({role:'jarvis', text:text});
+  if(conversationHistory.length>20) conversationHistory.splice(0,2); // keep last 10 exchanges
+  addHistory(userSaid||document.getElementById('transcript').textContent, text);
+  setOrbState('idle');
+  speak(text);
+}
 function sendText(){ const input=document.getElementById('textInput'); const val=input.value.trim(); if(!val) return; input.value=''; setTranscript(val,true); handleCommand(val); }
 
 function addHistory(q,a){
@@ -807,9 +908,9 @@ function handleCommand(text){
   showLoading();
 
   if(/^(hello|hi|hey|good morning|good afternoon|good evening|howzit|hallo)/.test(t)){
-    respond('Good '+getTimeOfDay()+". I'm Jarvis, your IVA business assistant. How can I help you?"); return;
+    respond('Good '+getTimeOfDay()+". I'm Jarvis, your I.V.A. business assistant. How can I help you?", text); return;
   }
-  if(/thank|cheers|dankie/.test(t)){ respond("You're welcome. Anything else I can help you with?"); return; }
+  if(/thank|cheers|dankie/.test(t)){ respond("You're welcome. Anything else I can help you with?", text); return; }
 
   var needsLeads       = /lead|leed|leen|leeds|find |look up|read me|client|deal/.test(t);
   var needsContractors = /contractor|agent|ic code|who submitted|performance|active contractor|how many contractor|how many agent/.test(t);
@@ -825,7 +926,7 @@ function handleCommand(text){
     Promise.all(fetches).then(function(results){
       var leadsData=results[0], ctData=results[1], finData=results[2];
       var today=new Date().toDateString();
-      var context='You are Jarvis, a professional British male AI business assistant for Iets Van Alles, a South African used heavy vehicle and machinery brokerage. '+
+      var context='You are Jarvis, a professional British male AI business assistant for I.V.A., a South African used heavy vehicle and machinery brokerage. When speaking the business name always say I.V.A. — never IVA or Iets Van Alles. '+
         'Be concise, clear and professional. Speak in first person as Jarvis. Do not use markdown or bullet symbols — plain spoken sentences only. '+
         'Today is '+today+'.\n\n';
       if(leadsData&&!leadsData.error){
@@ -837,18 +938,26 @@ function handleCommand(text){
       }
       if(ctData&&!ctData.error){
         var cts=ctData.contractors||[];
-        context+='CONTRACTORS: '+cts.length+' total. '+cts.slice(0,10).map(c=>c.name+'('+c.icCode+'):'+c.total+' leads,won:'+c.won+',last:'+c.lastLeadDate).join(' | ')+'\n\n';
+        context+='CONTRACTORS ('+cts.length+' total):\n'+cts.map(c=>c.icCode+' | '+c.name+' | leads:'+c.total+' | won:'+c.won+' | contacted:'+c.contacted+' | new:'+c.new+' | last:'+c.lastLeadDate).join('\n')+'\n\n';
       }
       if(finData&&finData.summary){
         var s=finData.summary;
         context+='FINANCIALS: Period:'+s.period+'. Income:R'+s.income+', Expenses:R'+s.expenses+', Balance:R'+s.closingBalance+'\n\n';
       }
-      context+='USER QUESTION: '+text;
+      // Add conversation history so Gemini remembers context
+      if(conversationHistory.length>0){
+        context+='CONVERSATION SO FAR:\n'+conversationHistory.map(m=>(m.role==='user'?'User: ':'Jarvis: ')+m.text).join('\n')+'\n\n';
+      }
+      context+='User now says: '+text+'\n\nRespond as Jarvis. If the user says yes, no, or a short reply, answer in context of what was just discussed.';
       return askGemini(context);
-    }).then(answer=>respond(answer)).catch(err=>respond('Problem fetching data: '+err.message));
+    }).then(answer=>respond(answer,text)).catch(err=>respond('Problem fetching data: '+err.message, text));
   } else {
-    var prompt='You are Jarvis, a professional British male AI assistant. Be concise and spoken — no markdown, no bullet symbols. Answer: '+text;
-    askGemini(prompt).then(answer=>respond(answer)).catch(err=>respond('I could not reach the AI: '+err.message));
+    var prompt='You are Jarvis, a professional British male AI business assistant for I.V.A. Be concise and conversational — no markdown, no bullet symbols. ';
+    if(conversationHistory.length>0){
+      prompt+='Conversation so far:\n'+conversationHistory.map(m=>(m.role==='user'?'User: ':'Jarvis: ')+m.text).join('\n')+'\n\n';
+    }
+    prompt+='User now says: '+text+'\n\nRespond naturally as Jarvis, keeping context of the conversation.';
+    askGemini(prompt).then(answer=>respond(answer,text)).catch(err=>respond('I could not reach the AI: '+err.message, text));
   }
 }
 
