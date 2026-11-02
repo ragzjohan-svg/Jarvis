@@ -527,13 +527,28 @@ document.getElementById('pinInput').addEventListener('keydown', e => { if(e.key=
 const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbwnXKSZ-cVchEdwg4FE5oY9F8N0zjZQNxcQkiyi_E7kfvruAm9yD187PMKtcZ9Kg0VbLw/exec';
 
 function askGemini(prompt) {
-  var url = JARVIS_BACKEND + '?action=askGemini&prompt=' + encodeURIComponent(prompt);
-  return fetch(url, { method:'GET', redirect:'follow' })
+  // POST the prompt so long prompts (contractor directory + history) don't hit URL length limits
+  return fetch(JARVIS_BACKEND, {
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'askGemini', prompt: prompt })
+  })
     .then(r => r.text())
     .then(text => {
-      var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
-      try { var d = JSON.parse(json); return d.answer || d.error || 'No response.'; }
+      try { var d = JSON.parse(text); return d.answer || d.error || 'No response.'; }
       catch(e) { return 'Could not parse response.'; }
+    })
+    .catch(function(err) {
+      // Fallback: try GET with a shortened prompt (first 1500 chars)
+      var shortUrl = JARVIS_BACKEND + '?action=askGemini&prompt=' + encodeURIComponent(prompt.slice(0, 1500));
+      return fetch(shortUrl, { method:'GET', redirect:'follow' })
+        .then(r => r.text())
+        .then(text => {
+          var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
+          try { var d = JSON.parse(json); return d.answer || d.error || 'No response.'; }
+          catch(e) { return 'No response.'; }
+        });
     });
 }
 
