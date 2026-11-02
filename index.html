@@ -1006,6 +1006,11 @@ function handleCommand(text){
       'Always say "I.V.A." never "IVA". Speak like a calm, sharp British male assistant. '+
       'Plain sentences only — no bullet points, no asterisks, no markdown. '+
       'Keep replies under 60 words unless asked for detail. '+
+      'IMPORTANT: You can ONLY report information from the data provided. '+
+      'You CANNOT send messages, emails, WhatsApps, make calls, set reminders, access calendars, or take any action outside this conversation. '+
+      'If asked to do something you cannot do, say so plainly in one sentence and offer what you CAN tell them instead. '+
+      'Never make up capabilities you do not have. '+
+      'Stay strictly on topic — do not bring up previous unrelated topics. '+
       'Today: '+new Date().toDateString()+'.\n\n';
 
     // ── CONTRACTOR DIRECTORY — always included ──
@@ -1038,7 +1043,7 @@ function handleCommand(text){
     // ── THE ACTUAL REQUEST ──
     sys += 'Johan says: "'+text+'"\n\n'+
       'Reply as Jarvis. If Johan gives a short answer like yes/no/more, respond in context of the last thing discussed. '+
-      'End your reply with one short follow-up question to keep the conversation going, unless Johan said goodbye or stop.';
+      'Answer only what was asked. Do not add follow-up questions or suggestions unless Johan asks for them.';
 
     return askGemini(sys);
 
