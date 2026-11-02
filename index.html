@@ -652,9 +652,9 @@ if (SpeechRec) {
 
   recognition.onend = () => {
     isListening = false;
-    // If conversation active and Jarvis isn't speaking, reopen mic after short pause
+    // Only reopen mic if conversation is active AND Jarvis is not speaking
     if(conversationActive && !isSpeaking){
-      setTimeout(openMic, 500);
+      setTimeout(openMic, 1000);
     } else if(!conversationActive){
       setOrbState('idle');
     }
@@ -708,12 +708,13 @@ function speak(text){
     utt.onend=()=>{
       isSpeaking=false;
       setOrbState('idle');
-      if(conversationActive){ setTimeout(openMic, 500); } // reopen mic after speaking
+      // Wait 1.8s after speaking ends before reopening mic — prevents echo pickup
+      if(conversationActive){ setTimeout(openMic, 1800); }
     };
     utt.onerror=()=>{
       isSpeaking=false;
       setOrbState('idle');
-      if(conversationActive){ setTimeout(openMic, 500); }
+      if(conversationActive){ setTimeout(openMic, 1800); }
     };
     window.speechSynthesis.speak(utt);
   };
