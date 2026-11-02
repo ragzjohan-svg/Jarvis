@@ -527,7 +527,7 @@ document.getElementById('pinInput').addEventListener('keydown', e => { if(e.key=
 const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbyK2EhkwwKQJhl_1A4ZxZwc-XYXHVk0P7NNPiJ8RFcUK7sWnxgGKCnLlglU7Yg5MKdz/exec';
 
 function askGemini(prompt) {
-  var safe = prompt.length > 3000 ? prompt.slice(0, 3000) : prompt;
+  var safe = prompt.length > 6000 ? prompt.slice(0, 6000) : prompt;
   return new Promise(function(resolve) {
     var cbName = 'jarvisCb_' + Date.now();
     var script = document.createElement('script');
@@ -549,24 +549,46 @@ function askGemini(prompt) {
 }
 
 function callBackend(action) {
-  return fetch(JARVIS_BACKEND + '?action=' + action, { method:'GET', redirect:'follow' })
-    .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
-    .then(text => {
-      var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
-      try { return JSON.parse(json); } catch(e) { return JSON.parse(text); }
-    });
+  return new Promise(function(resolve, reject) {
+    var cbName = 'jarvisCb_' + action + '_' + Date.now();
+    var script = document.createElement('script');
+    var timer = setTimeout(function() {
+      delete window[cbName]; script.remove(); reject(new Error('timeout'));
+    }, 12000);
+    window[cbName] = function(data) {
+      clearTimeout(timer); delete window[cbName]; script.remove(); resolve(data);
+    };
+    script.onerror = function() {
+      clearTimeout(timer); delete window[cbName]; script.remove(); reject(new Error('script error'));
+    };
+    script.src = JARVIS_BACKEND + '?action=' + action + '&callback=' + cbName;
+    document.head.appendChild(script);
+  });
 }
 
-// ── CONTRACTOR DIRECTORY (loaded once at startup) ─────────────
-// Stored as a lookup map so we resolve names in JS, NOT by sending the full list to Gemini
+// ── DATA CACHE — preloaded at startup so it's ready when Johan asks ──────────
 var jarvisContractorMap = {}; // ic → name
-callBackend('getDirectory').then(function(data){
-  if(data && data.directory && data.directory.length){
-    data.directory.forEach(function(c){
-      jarvisContractorMap[c.ic.toUpperCase()] = c.name;
-    });
-  }
-}).catch(function(){});
+var jarvisCachedLeads = null;
+var jarvisCachedContractors = null;
+
+function preloadData(){
+  callBackend('getDirectory').then(function(data){
+    if(data && data.directory && data.directory.length){
+      data.directory.forEach(function(c){
+        jarvisContractorMap[c.ic.toUpperCase()] = c.name;
+      });
+    }
+  }).catch(function(){});
+
+  callBackend('getLeads').then(function(data){
+    if(data && !data.error) jarvisCachedLeads = data;
+  }).catch(function(){});
+
+  callBackend('getContractors').then(function(data){
+    if(data && !data.error) jarvisCachedContractors = data;
+  }).catch(function(){});
+}
+preloadData();
 
 // Resolve an IC code to a name locally (no URL needed)
 function resolveIC(ic){
@@ -992,8 +1014,8 @@ function handleCommand(text){
   var needsOverview    = /overview|briefing|summary|how are we|what.s happening|how.s business/.test(t);
 
   var fetches = [
-    (needsLeads||needsOverview)       ? fetchWithTimeout('getLeads', 8000)       : Promise.resolve(null),
-    (needsContractors||needsOverview) ? fetchWithTimeout('getContractors', 8000) : Promise.resolve(null),
+    (needsLeads||needsOverview)       ? (jarvisCachedLeads ? Promise.resolve(jarvisCachedLeads) : fetchWithTimeout('getLeads', 8000))             : Promise.resolve(null),
+    (needsContractors||needsOverview) ? (jarvisCachedContractors ? Promise.resolve(jarvisCachedContractors) : fetchWithTimeout('getContractors', 8000)) : Promise.resolve(null),
     (needsFinancials||needsOverview)  ? fetchWithTimeout('getSummary', 5000)     : Promise.resolve(null)
   ];
 
