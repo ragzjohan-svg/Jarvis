@@ -2,447 +2,513 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Jarvis — IVA Assistant</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&family=Rajdhani:wght@300;400;500&display=swap">
   <style>
+    /* ── DESIGN TOKENS ── */
     :root {
       --gold: #d4af37;
       --gold-dim: #a88a20;
-      --gold-glow: rgba(212,175,55,0.15);
-      --bg: #0a0a0a;
-      --panel: #141414;
-      --panel2: #1a1a1a;
-      --border: #2a2a2a;
-      --text: #f0f0f0;
-      --muted: #888;
-      --red: #f87171;
+      --gold-glow: rgba(212,175,55,0.18);
+      --cyan: #00d4ff;
+      --cyan-dim: rgba(0,212,255,0.15);
+      --purple: #a78bff;
       --green: #4ade80;
+      --red: #f87171;
+      --bg: #03050a;
+      --bg2: #07080f;
+      --panel: rgba(10,14,24,0.85);
+      --border: rgba(212,175,55,0.15);
+      --text: #e8eaf0;
+      --muted: rgba(180,190,210,0.5);
+      color-scheme: dark;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
+    html, body {
+      width: 100%; height: 100%;
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      font-family: 'Rajdhani', sans-serif;
+      overflow-x: hidden;
     }
+
+    /* Starfield background */
+    #stars {
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ── PIN OVERLAY ── */
+    #pinOverlay {
+      position: fixed; inset: 0; z-index: 999;
+      background: radial-gradient(ellipse at center, #070c18 0%, #020408 100%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px;
+    }
+    #pinOverlay h2 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 26px; letter-spacing: 10px;
+      color: var(--gold);
+      text-shadow: 0 0 30px rgba(212,175,55,0.5);
+    }
+    #pinOverlay p { color: var(--muted); font-size: 12px; letter-spacing: 4px; }
+    #pinInput {
+      background: rgba(212,175,55,0.05);
+      border: 1px solid var(--gold-dim);
+      border-radius: 6px;
+      padding: 14px 20px;
+      color: var(--text);
+      font-size: 26px; letter-spacing: 10px;
+      text-align: center; width: 200px; outline: none;
+      font-family: 'Orbitron', sans-serif;
+    }
+    #pinError { color: var(--red); font-size: 12px; min-height: 16px; letter-spacing: 1px; }
+    #pinBtn {
+      background: linear-gradient(135deg, var(--gold-dim), var(--gold));
+      border: none; border-radius: 6px;
+      padding: 12px 36px; color: #000;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 12px; font-weight: 700; letter-spacing: 3px;
+      cursor: pointer; transition: opacity 0.2s;
+    }
+    #pinBtn:hover { opacity: 0.85; }
 
     /* ── HEADER ── */
     header {
-      width: 100%;
-      border-bottom: 2px solid var(--gold);
-      padding: 18px 28px 14px;
-      display: flex;
-      align-items: flex-end;
-      gap: 16px;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+      padding: 14px 24px;
+      display: flex; align-items: center; gap: 12px;
+      background: linear-gradient(to bottom, rgba(3,5,10,0.95) 70%, transparent);
+      border-bottom: 1px solid rgba(212,175,55,0.08);
     }
-    header h1 {
-      font-size: 28px;
-      letter-spacing: 8px;
-      color: var(--gold);
-      font-weight: 700;
+    .h-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 20px; letter-spacing: 8px; color: var(--gold);
+      text-shadow: 0 0 20px rgba(212,175,55,0.4);
     }
-    header p {
-      font-size: 11px;
-      letter-spacing: 3px;
-      color: var(--muted);
-      padding-bottom: 4px;
+    .h-sub { font-size: 10px; letter-spacing: 3px; color: var(--muted); }
+    .h-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); margin-left: auto;
+      box-shadow: 0 0 8px var(--green);
+      animation: blink 2.5s ease-in-out infinite;
     }
-    .status-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      margin-left: auto;
-      box-shadow: 0 0 6px var(--green);
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%,100% { opacity:1; } 50% { opacity:0.4; }
-    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-    /* ── MAIN ── */
+    /* ── MAIN LAYOUT ── */
     main {
-      width: 100%;
-      max-width: 640px;
-      padding: 28px 20px 60px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 20px;
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      padding: 80px 16px 40px;
+      display: flex; flex-direction: column; align-items: center;
     }
 
-    /* ── ORB / GLOBE ── */
-    .orb-wrap { display:flex; flex-direction:column; align-items:center; gap:16px; }
-
-    .globe-container {
+    /* ── RADIAL STAGE ── */
+    .radial-stage {
       position: relative;
-      width: 160px; height: 160px;
-      cursor: pointer;
-      user-select: none;
+      width: 100%;
+      max-width: 600px;
+      /* Tall enough to show globe + surrounding buttons */
+      aspect-ratio: 1;
+      max-height: 600px;
+      margin: 0 auto;
     }
 
-    /* Outer ring */
-    .globe-ring {
+    /* Globe sits dead centre */
+    .globe-wrap {
       position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      border: 1.5px solid var(--gold-dim);
-      transition: border-color 0.4s, box-shadow 0.4s;
-    }
-    .globe-ring-2 {
-      position: absolute;
-      inset: 8px;
-      border-radius: 50%;
-      border: 1px solid rgba(212,175,55,0.15);
-      transition: all 0.4s;
-    }
-
-    /* The globe itself */
-    canvas#globeCanvas {
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      width: 160px; height: 160px;
-    }
-
-    /* Tap hit area */
-    .globe-hit {
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex; flex-direction: column;
+      align-items: center; gap: 10px;
       z-index: 10;
     }
+    .globe-container {
+      position: relative;
+      width: 200px; height: 200px;
+      cursor: pointer; user-select: none;
+    }
+    canvas#globeCanvas {
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      width: 200px; height: 200px;
+    }
+    .globe-ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      border: 1.5px solid rgba(212,175,55,0.4);
+      transition: border-color 0.4s, box-shadow 0.4s;
+      pointer-events: none;
+    }
+    .globe-hit { position: absolute; inset: 0; border-radius: 50%; z-index: 10; }
 
-    /* State glow rings */
+    /* State glow */
     .globe-container.listening .globe-ring {
       border-color: var(--gold);
-      box-shadow: 0 0 0 4px rgba(212,175,55,0.12), 0 0 40px rgba(212,175,55,0.35);
-      animation: ringPulse 1.2s ease-in-out infinite;
-    }
-    .globe-container.listening .globe-ring-2 {
-      border-color: rgba(212,175,55,0.3);
-      animation: ringPulse2 1.2s ease-in-out infinite;
+      box-shadow: 0 0 0 6px rgba(212,175,55,0.08), 0 0 60px rgba(212,175,55,0.5);
+      animation: glowPulse 1.1s ease-in-out infinite;
     }
     .globe-container.thinking .globe-ring {
-      border-color: #a88aff;
-      box-shadow: 0 0 0 3px rgba(168,138,255,0.1), 0 0 30px rgba(168,138,255,0.3);
+      border-color: var(--purple);
+      box-shadow: 0 0 0 4px rgba(167,139,255,0.1), 0 0 50px rgba(167,139,255,0.45);
     }
     .globe-container.speaking .globe-ring {
-      border-color: var(--green);
-      box-shadow: 0 0 0 3px rgba(74,222,128,0.12), 0 0 35px rgba(74,222,128,0.3);
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 4px rgba(0,212,255,0.08), 0 0 50px rgba(0,212,255,0.35);
+    }
+    @keyframes glowPulse {
+      0%,100% { box-shadow: 0 0 0 6px rgba(212,175,55,0.08), 0 0 60px rgba(212,175,55,0.5); }
+      50%      { box-shadow: 0 0 0 14px rgba(212,175,55,0.04), 0 0 90px rgba(212,175,55,0.7); }
     }
 
-    @keyframes ringPulse {
-      0%,100% { box-shadow: 0 0 0 4px rgba(212,175,55,0.12), 0 0 40px rgba(212,175,55,0.35); }
-      50%      { box-shadow: 0 0 0 8px rgba(212,175,55,0.08), 0 0 60px rgba(212,175,55,0.5); }
-    }
-    @keyframes ringPulse2 {
-      0%,100% { transform: scale(1); opacity:1; }
-      50%      { transform: scale(1.04); opacity:0.6; }
+    /* Orbit paths (decorative SVG rings around the globe) */
+    .orbit-svg {
+      position: absolute; inset: 0;
+      pointer-events: none;
     }
 
-    .orb-label {
-      font-size: 10px;
-      letter-spacing: 3px;
-      color: var(--muted);
-      transition: color 0.3s;
+    /* Globe label */
+    .globe-label {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 9px; letter-spacing: 3px; color: var(--muted);
+      transition: color 0.3s; text-align: center;
     }
-    .globe-container.listening  ~ .orb-label { color: var(--gold); }
-    .globe-container.thinking   ~ .orb-label { color: #a88aff; }
-    .globe-container.speaking   ~ .orb-label { color: var(--green); }
+    .globe-container.listening ~ .globe-label { color: var(--gold); }
+    .globe-container.thinking  ~ .globe-label { color: var(--purple); }
+    .globe-container.speaking  ~ .globe-label { color: var(--cyan); }
+
+    /* ── ORBITAL BUTTONS ── */
+    /* Each .orb-btn is absolutely placed by JS in a circle */
+    .orb-btn {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      width: 96px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 6px 8px;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 4px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      text-align: center;
+    }
+    .orb-btn:hover {
+      border-color: rgba(212,175,55,0.5);
+      background: rgba(212,175,55,0.07);
+      box-shadow: 0 0 20px rgba(212,175,55,0.12);
+    }
+    .orb-btn .ob-icon { font-size: 18px; line-height: 1; }
+    .orb-btn .ob-text {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 7px; letter-spacing: 0.5px;
+      color: var(--gold); line-height: 1.3;
+    }
+    .orb-btn .ob-sub { font-size: 9px; color: var(--muted); line-height: 1.2; }
+
+    /* ── CONNECTOR LINES (SVG overlay over radial-stage) ── */
+    #connectorSvg {
+      position: absolute; inset: 0;
+      pointer-events: none; z-index: 2;
+    }
 
     /* ── TRANSCRIPT ── */
-    .transcript {
-      width: 100%;
-      min-height: 36px;
-      text-align: center;
-      font-size: 14px;
-      color: var(--muted);
-      letter-spacing: 0.5px;
-      padding: 4px 8px;
-      transition: color 0.2s;
+    .transcript-wrap {
+      width: 100%; max-width: 600px;
+      text-align: center; margin-top: 8px;
     }
-    .transcript.has-text { color: var(--gold); }
+    #transcript {
+      font-size: 13px; color: var(--muted);
+      letter-spacing: 1px; min-height: 20px;
+      transition: color 0.2s;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    #transcript.has-text { color: var(--gold); }
 
     /* ── RESPONSE CARD ── */
     .response-card {
-      width: 100%;
+      width: 100%; max-width: 600px;
+      margin-top: 16px;
       background: var(--panel);
       border: 1px solid var(--border);
       border-left: 3px solid var(--gold);
-      border-radius: 8px;
-      overflow: hidden;
+      border-radius: 10px; overflow: hidden;
+      backdrop-filter: blur(12px);
     }
     .response-header {
-      background: var(--panel2);
-      padding: 8px 16px;
-      font-size: 10px;
-      letter-spacing: 4px;
-      color: var(--gold-dim);
+      background: rgba(212,175,55,0.06);
+      padding: 7px 16px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 9px; letter-spacing: 4px; color: var(--gold-dim);
       border-bottom: 1px solid var(--border);
     }
     .response-body {
-      padding: 16px;
-      font-size: 14px;
-      line-height: 1.7;
-      color: var(--text);
-      white-space: pre-wrap;
-      min-height: 60px;
+      padding: 14px 16px;
+      font-size: 14px; line-height: 1.7;
+      color: var(--text); white-space: pre-wrap; min-height: 56px;
     }
-
-    /* ── NO SPEECH WARNING ── */
-    .no-speech-warn {
-      display: none;
-      width: 100%;
-      background: rgba(248,113,113,0.1);
-      border: 1px solid var(--red);
-      border-radius: 8px;
-      padding: 12px 16px;
-      font-size: 13px;
-      color: var(--red);
-      text-align: center;
-    }
-
-    /* ── QUICK COMMANDS ── */
-    .quick-title {
-      font-size: 10px;
-      letter-spacing: 3px;
-      color: var(--muted);
-      align-self: flex-start;
-    }
-    .quick-grid {
-      width: 100%;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-    .quick-btn {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 14px;
-      color: var(--text);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      text-align: left;
-      transition: border-color 0.2s, background 0.2s;
-    }
-    .quick-btn:hover { border-color: var(--gold-dim); background: var(--panel2); }
-    .q-icon { font-size: 20px; }
-    .q-text { font-size: 13px; font-weight: 600; }
-    .q-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
     /* ── TEXT INPUT ── */
-    .text-input-wrap {
-      width: 100%;
-      display: flex;
-      gap: 8px;
+    .input-row {
+      width: 100%; max-width: 600px;
+      display: flex; gap: 8px; margin-top: 12px;
     }
     .text-input {
       flex: 1;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 16px;
-      color: var(--text);
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
+      border-radius: 8px; padding: 11px 14px;
+      color: var(--text); font-size: 14px;
+      font-family: 'Rajdhani', sans-serif;
+      outline: none; transition: border-color 0.2s;
+      backdrop-filter: blur(8px);
     }
-    .text-input:focus { border-color: var(--gold-dim); }
+    .text-input:focus { border-color: rgba(212,175,55,0.45); }
     .text-input::placeholder { color: var(--muted); }
     .send-btn {
-      background: var(--gold-dim);
-      border: none;
-      border-radius: 8px;
-      padding: 12px 20px;
-      color: #000;
-      font-size: 20px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background 0.2s;
+      background: linear-gradient(135deg, var(--gold-dim), var(--gold));
+      border: none; border-radius: 8px;
+      padding: 11px 20px; color: #000;
+      font-size: 18px; font-weight: 700; cursor: pointer;
+      transition: opacity 0.2s;
     }
-    .send-btn:hover { background: var(--gold); }
+    .send-btn:hover { opacity: 0.85; }
+
+    /* ── COMMENTS TOGGLE ── */
+    .comments-row {
+      margin-top: 10px; display: flex; justify-content: center;
+    }
+    #commentsToggle {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      color: var(--muted); font-size: 11px; letter-spacing: 1px;
+      padding: 5px 16px; border-radius: 20px; cursor: pointer;
+      font-family: 'Rajdhani', sans-serif;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    #commentsToggle.active { border-color: rgba(212,175,55,0.35); color: var(--gold); }
 
     /* ── HISTORY ── */
-    .history { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+    .history { width: 100%; max-width: 600px; margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
     .history-item {
       background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px 16px;
-      font-size: 13px;
-      line-height: 1.5;
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 14px; font-size: 13px; line-height: 1.5;
     }
-    .history-item .h-q {
-      color: var(--gold-dim);
-      font-size: 11px;
-      letter-spacing: 1px;
-      margin-bottom: 6px;
+    .h-q {
+      font-family: 'Orbitron', sans-serif;
+      color: rgba(212,175,55,0.5); font-size: 8px; letter-spacing: 3px; margin-bottom: 4px;
     }
-    .history-item .h-a { color: var(--muted); }
+    .h-a { color: var(--muted); margin-top: 6px; }
 
-    /* ── PIN LOCK ── */
-    #pinOverlay {
-      position: fixed;
-      inset: 0;
-      background: #0a0a0a;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      z-index: 999;
+    /* ── NO SPEECH WARNING ── */
+    .no-speech-warn {
+      display: none; width: 100%; max-width: 600px;
+      background: rgba(248,113,113,0.08);
+      border: 1px solid rgba(248,113,113,0.3);
+      border-radius: 8px; padding: 10px 14px;
+      font-size: 12px; color: var(--red); text-align: center; margin-top: 8px;
     }
-    #pinOverlay h2 {
-      color: var(--gold);
-      letter-spacing: 6px;
-      font-size: 22px;
-    }
-    #pinOverlay p { color: var(--muted); font-size: 13px; letter-spacing: 2px; }
-    #pinInput {
-      background: var(--panel);
-      border: 1px solid var(--gold-dim);
-      border-radius: 8px;
-      padding: 14px 20px;
-      color: var(--text);
-      font-size: 24px;
-      letter-spacing: 8px;
-      text-align: center;
-      width: 180px;
-      outline: none;
-    }
-    #pinError { color: var(--red); font-size: 13px; min-height: 18px; }
-    #pinBtn {
-      background: var(--gold-dim);
-      border: none;
-      border-radius: 8px;
-      padding: 12px 32px;
-      color: #000;
-      font-size: 14px;
-      font-weight: 700;
-      letter-spacing: 2px;
-      cursor: pointer;
-    }
-    #pinBtn:hover { background: var(--gold); }
   </style>
 </head>
 <body>
 
-<!-- ── PIN LOCK ── -->
+<!-- Starfield -->
+<canvas id="stars"></canvas>
+
+<!-- PIN LOCK -->
 <div id="pinOverlay">
   <h2>JARVIS</h2>
   <p>/// IVA SECURE ACCESS</p>
-  <input id="pinInput" type="password" maxlength="6" placeholder="••••" inputmode="numeric"
-    onkeydown="if(event.key==='Enter') checkPin()">
+  <input id="pinInput" type="password" maxlength="6" placeholder="••••" inputmode="numeric">
   <div id="pinError"></div>
   <button id="pinBtn" onclick="checkPin()">ENTER</button>
 </div>
 
 <header>
-  <h1>JARVIS</h1>
-  <p>/// IVA BUSINESS ASSISTANT</p>
-  <div class="status-dot" id="statusDot" title="Systems online"></div>
+  <div>
+    <div class="h-title">JARVIS</div>
+    <div class="h-sub">/// IVA BUSINESS ASSISTANT</div>
+  </div>
+  <div class="h-dot" title="Systems online"></div>
 </header>
 
 <main>
 
-  <!-- GLOBE -->
-  <div class="orb-wrap">
-    <div class="globe-container" id="orb" onclick="toggleListen()">
-      <canvas id="globeCanvas" width="160" height="160"></canvas>
-      <div class="globe-ring"></div>
-      <div class="globe-ring-2"></div>
-      <div class="globe-hit"></div>
+  <!-- RADIAL STAGE -->
+  <div class="radial-stage" id="radialStage">
+
+    <!-- Connector lines SVG (drawn by JS) -->
+    <svg id="connectorSvg"></svg>
+
+    <!-- Orbital buttons (placed by JS) -->
+    <div id="orbitalButtons"></div>
+
+    <!-- Globe at centre -->
+    <div class="globe-wrap">
+      <div class="globe-container" id="orb" onclick="toggleListen()">
+        <canvas id="globeCanvas" width="200" height="200"></canvas>
+        <div class="globe-ring"></div>
+        <div class="globe-hit"></div>
+      </div>
+      <div class="globe-label" id="orbLabel">TAP TO SPEAK</div>
     </div>
-    <div class="orb-label" id="orbLabel">Tap to speak</div>
+
   </div>
 
-  <!-- TRANSCRIPT -->
-  <div class="transcript" id="transcript">Listening for your command…</div>
+  <!-- Transcript -->
+  <div class="transcript-wrap">
+    <div id="transcript">Listening for your command…</div>
+  </div>
 
-  <!-- NO SPEECH WARNING -->
+  <!-- No speech warning -->
   <div class="no-speech-warn" id="noSpeechWarn">
-    ⚠️ Your browser doesn't support voice input. Use the text box below instead.
+    ⚠️ Voice input not supported. Use the text box below.
   </div>
 
-  <!-- RESPONSE -->
-  <div class="response-card" id="responseCard">
+  <!-- Response -->
+  <div class="response-card">
     <div class="response-header">JARVIS</div>
     <div class="response-body" id="responseBody">Systems online. How can I help you?</div>
   </div>
 
-  <!-- QUICK COMMANDS -->
-  <div class="quick-title">Quick commands</div>
-  <div class="quick-grid">
-    <button class="quick-btn" onclick="handleCommand('give me an overview')">
-      <span class="q-icon">📊</span>
-      <span><div class="q-text">Business overview</div><div class="q-sub">Leads + financials</div></span>
-    </button>
-    <button class="quick-btn" onclick="handleCommand('read me today leads')">
-      <span class="q-icon">📋</span>
-      <span><div class="q-text">Today's leads</div><div class="q-sub">New submissions</div></span>
-    </button>
-    <button class="quick-btn" onclick="handleCommand('read me contacted leads')">
-      <span class="q-icon">📞</span>
-      <span><div class="q-text">Contacted leads</div><div class="q-sub">Deals in progress</div></span>
-    </button>
-    <button class="quick-btn" onclick="handleCommand('financial overview')">
-      <span class="q-icon">💰</span>
-      <span><div class="q-text">Financial overview</div><div class="q-sub">Income &amp; expenses</div></span>
-    </button>
-    <button class="quick-btn" onclick="handleCommand('read me won leads')">
-      <span class="q-icon">✅</span>
-      <span><div class="q-text">Won leads</div><div class="q-sub">Closed deals</div></span>
-    </button>
-    <button class="quick-btn" onclick="handleCommand('read me this week leads')">
-      <span class="q-icon">📅</span>
-      <span><div class="q-text">This week's leads</div><div class="q-sub">Weekly summary</div></span>
-    </button>
-    <button class="quick-btn" onclick="handleCommand('contractor performance')">
-      <span class="q-icon">👥</span>
-      <span><div class="q-text">Contractor performance</div><div class="q-sub">All agent stats</div></span>
-    </button>
-    <button class="quick-btn" onclick="handleCommand('how many contractors this month')">
-      <span class="q-icon">🔢</span>
-      <span><div class="q-text">Active this month</div><div class="q-sub">Who submitted leads</div></span>
-    </button>
+  <!-- Comments toggle -->
+  <div class="comments-row">
+    <button id="commentsToggle" class="active" onclick="toggleComments()">💬 COMMENTS: ON</button>
   </div>
 
-  <!-- COMMENTS TOGGLE -->
-  <div style="display:flex;justify-content:center;margin:4px 0;">
-    <button id="commentsToggle" onclick="toggleComments()" style="
-      background:#1a1a1a;border:1px solid #2a2a2a;color:#888;
-      font-size:12px;letter-spacing:1px;padding:6px 18px;border-radius:20px;cursor:pointer;">
-      💬 COMMENTS: ON
-    </button>
-  </div>
-
-  <!-- TEXT INPUT -->
-  <div class="text-input-wrap">
-    <input class="text-input" id="textInput" type="text" placeholder="Or type a command here…" onkeydown="if(event.key==='Enter') sendText()">
+  <!-- Text input -->
+  <div class="input-row">
+    <input class="text-input" id="textInput" type="text" placeholder="Or type a command here…"
+      onkeydown="if(event.key==='Enter') sendText()">
     <button class="send-btn" onclick="sendText()">›</button>
   </div>
 
-  <!-- HISTORY -->
+  <!-- History -->
   <div class="history" id="history"></div>
 
 </main>
 
 <script>
 // ============================================================
-// JARVIS — IVA Business Assistant (Standalone / GitHub Pages)
-// Communicates with Apps Script backend via fetch()
+// JARVIS — IVA Business Assistant
 // ============================================================
 
-// ── PIN LOCK ────────────────────────────────────────────────
-const JARVIS_PIN = '1977'; // ← Change this to your preferred PIN
+// ── STARFIELD ────────────────────────────────────────────────
+(function(){
+  const c = document.getElementById('stars');
+  const ctx = c.getContext('2d');
+  function resize(){ c.width = innerWidth; c.height = innerHeight; }
+  resize(); window.addEventListener('resize', resize);
+  const stars = Array.from({length:200}, ()=>({
+    x: Math.random(), y: Math.random(),
+    r: Math.random()*1.2+0.2,
+    a: Math.random()*0.6+0.2,
+    speed: Math.random()*0.0003+0.0001
+  }));
+  let t=0;
+  function draw(){
+    t++;
+    ctx.clearRect(0,0,c.width,c.height);
+    stars.forEach(s=>{
+      const flicker = s.a*(0.7+0.3*Math.sin(t*s.speed*300+s.x*100));
+      ctx.beginPath();
+      ctx.arc(s.x*c.width, s.y*c.height, s.r, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(200,220,255,${flicker})`;
+      ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ── ORBITAL BUTTONS ──────────────────────────────────────────
+const COMMANDS = [
+  { icon:'📊', text:'OVERVIEW',    sub:'Business',        cmd:'give me an overview' },
+  { icon:'📋', text:'TODAY',       sub:'Leads',           cmd:'read me today leads' },
+  { icon:'📞', text:'CONTACTED',   sub:'In progress',     cmd:'read me contacted leads' },
+  { icon:'💰', text:'FINANCIAL',   sub:'Income/expenses', cmd:'financial overview' },
+  { icon:'✅', text:'WON',         sub:'Closed deals',    cmd:'read me won leads' },
+  { icon:'📅', text:'THIS WEEK',   sub:'Weekly',          cmd:'read me this week leads' },
+  { icon:'👥', text:'CONTRACTORS', sub:'All agents',      cmd:'contractor performance' },
+  { icon:'🔢', text:'ACTIVE',      sub:'This month',      cmd:'how many contractors this month' },
+];
+
+function buildOrbital() {
+  const stage = document.getElementById('radialStage');
+  const btnWrap = document.getElementById('orbitalButtons');
+  const svg = document.getElementById('connectorSvg');
+  const W = stage.offsetWidth || 400;
+  const H = stage.offsetHeight || 400;
+  const cx = W/2, cy = H/2;
+  const globeR = 100; // half of 200px globe
+  const orbitR = Math.min(cx, cy) * 0.82; // radius to button centres
+  const n = COMMANDS.length;
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = '';
+
+  // Orbit circle path
+  const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  circle.setAttribute('cx', cx); circle.setAttribute('cy', cy);
+  circle.setAttribute('r', orbitR);
+  circle.setAttribute('fill','none');
+  circle.setAttribute('stroke','rgba(212,175,55,0.06)');
+  circle.setAttribute('stroke-width','1');
+  circle.setAttribute('stroke-dasharray','4 8');
+  svg.appendChild(circle);
+
+  btnWrap.innerHTML = '';
+
+  COMMANDS.forEach((cmd, i) => {
+    const angle = (i / n) * Math.PI * 2 - Math.PI / 2; // start at top
+    const bx = cx + orbitR * Math.cos(angle);
+    const by = cy + orbitR * Math.sin(angle);
+
+    // Connector line from globe edge to button
+    const edgeX = cx + globeR * Math.cos(angle);
+    const edgeY = cy + globeR * Math.sin(angle);
+    const btnEdgeR = 48;
+    const btnEdgeX = bx - btnEdgeR * Math.cos(angle);
+    const btnEdgeY = by - btnEdgeR * Math.sin(angle);
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', edgeX); line.setAttribute('y1', edgeY);
+    line.setAttribute('x2', btnEdgeX); line.setAttribute('y2', btnEdgeY);
+    line.setAttribute('stroke','rgba(212,175,55,0.12)');
+    line.setAttribute('stroke-width','1');
+    line.setAttribute('stroke-dasharray','3 6');
+    svg.appendChild(line);
+
+    // Dot at globe edge
+    const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('cx', edgeX); dot.setAttribute('cy', edgeY);
+    dot.setAttribute('r','2');
+    dot.setAttribute('fill','rgba(212,175,55,0.35)');
+    svg.appendChild(dot);
+
+    // Button
+    const btn = document.createElement('button');
+    btn.className = 'orb-btn';
+    btn.style.left = bx + 'px';
+    btn.style.top  = by + 'px';
+    btn.style.zIndex = '5';
+    btn.innerHTML = `<span class="ob-icon">${cmd.icon}</span><span class="ob-text">${cmd.text}</span><span class="ob-sub">${cmd.sub}</span>`;
+    btn.onclick = () => handleCommand(cmd.cmd);
+    btnWrap.appendChild(btn);
+  });
+}
+
+// Build on load and resize
+window.addEventListener('load', buildOrbital);
+window.addEventListener('resize', buildOrbital);
+
+// ── PIN LOCK ─────────────────────────────────────────────────
+const JARVIS_PIN = '1977';
 function checkPin() {
   const val = document.getElementById('pinInput').value.trim();
   if (val === JARVIS_PIN) {
@@ -453,56 +519,43 @@ function checkPin() {
     document.getElementById('pinInput').value = '';
   }
 }
-document.getElementById('pinInput').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') checkPin();
-});
+document.getElementById('pinInput').addEventListener('keydown', e => { if(e.key==='Enter') checkPin(); });
 
-// ── BACKEND URLs ────────────────────────────────────────────
+// ── BACKEND ──────────────────────────────────────────────────
 const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbwnXKSZ-cVchEdwg4FE5oY9F8N0zjZQNxcQkiyi_E7kfvruAm9yD187PMKtcZ9Kg0VbLw/exec';
-// ── GEMINI CALL — routed through Apps Script (free, no billing) ──
+
 function askGemini(prompt) {
   var url = JARVIS_BACKEND + '?action=askGemini&prompt=' + encodeURIComponent(prompt);
-  return fetch(url, { method: 'GET', redirect: 'follow' })
-    .then(function(r) { return r.text(); })
-    .then(function(text) {
+  return fetch(url, { method:'GET', redirect:'follow' })
+    .then(r => r.text())
+    .then(text => {
       var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
       try { var d = JSON.parse(json); return d.answer || d.error || 'No response.'; }
-      catch(e) { return 'Could not parse Gemini response.'; }
+      catch(e) { return 'Could not parse response.'; }
     });
 }
 
-// Apps Script requires no-cors mode — we use a proxy approach via fetch with redirect follow
 function callBackend(action) {
-  return fetch(JARVIS_BACKEND + '?action=' + action, {
-    method: 'GET',
-    redirect: 'follow'
-  })
-  .then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.text();
-  })
-  .then(function(text) {
-    // Strip JSONP wrapper if present
-    var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
-    try { return JSON.parse(json); } catch(e) { return JSON.parse(text); }
-  });
+  return fetch(JARVIS_BACKEND + '?action=' + action, { method:'GET', redirect:'follow' })
+    .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+    .then(text => {
+      var json = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
+      try { return JSON.parse(json); } catch(e) { return JSON.parse(text); }
+    });
 }
 
-// ── COMMENTS TOGGLE ─────────────────────────────────────────
+// ── COMMENTS ─────────────────────────────────────────────────
 var showComments = true;
 function toggleComments() {
   showComments = !showComments;
-  var btn = document.getElementById('commentsToggle');
+  const btn = document.getElementById('commentsToggle');
   btn.textContent = '💬 COMMENTS: ' + (showComments ? 'ON' : 'OFF');
-  btn.style.color = showComments ? '#888' : '#d4af37';
-  btn.style.borderColor = showComments ? '#2a2a2a' : '#d4af37';
+  btn.classList.toggle('active', showComments);
 }
 
-// ── SPEECH RECOGNITION ──────────────────────────────────────
+// ── SPEECH RECOGNITION ───────────────────────────────────────
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-let isListening = false;
-let isSpeaking = false;
+let recognition = null, isListening = false, isSpeaking = false;
 
 if (SpeechRec) {
   recognition = new SpeechRec();
@@ -510,666 +563,332 @@ if (SpeechRec) {
   recognition.continuous = false;
   recognition.interimResults = true;
 
-  recognition.onstart = () => {
-    isListening = true;
-    setOrbState('listening');
-    setTranscript('Listening…', false);
-  };
-
-  recognition.onresult = (e) => {
-    let interim = '', final = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) final += e.results[i][0].transcript;
-      else interim += e.results[i][0].transcript;
+  recognition.onstart = () => { isListening=true; setOrbState('listening'); setTranscript('Listening…',false); };
+  recognition.onresult = e => {
+    let interim='', final='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal) final+=e.results[i][0].transcript;
+      else interim+=e.results[i][0].transcript;
     }
-    setTranscript(final || interim, !!(final || interim));
-    if (final) {
-      stopListening();
-      handleCommand(final.trim());
-    }
+    setTranscript(final||interim,!!(final||interim));
+    if(final){ stopListening(); handleCommand(final.trim()); }
   };
-
-  recognition.onerror = (e) => {
+  recognition.onerror = e => {
     stopListening();
-    if (e.error === 'no-speech') setTranscript('No speech detected. Try again.', false);
-    else if (e.error === 'not-allowed') setTranscript('Microphone blocked. Check browser permissions.', false);
-    else setTranscript('Error: ' + e.error, false);
+    if(e.error==='no-speech') setTranscript('No speech detected.',false);
+    else if(e.error==='not-allowed') setTranscript('Microphone blocked.',false);
+    else setTranscript('Error: '+e.error,false);
   };
-
-  recognition.onend = () => { if (isListening) stopListening(); };
+  recognition.onend = () => { if(isListening) stopListening(); };
 } else {
-  document.getElementById('noSpeechWarn').style.display = 'block';
+  document.getElementById('noSpeechWarn').style.display='block';
 }
 
-function toggleListen() {
-  if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking = false; }
-  if (isListening) stopListening();
-  else startListening();
+function toggleListen(){
+  if(isSpeaking){ window.speechSynthesis.cancel(); isSpeaking=false; }
+  if(isListening) stopListening(); else startListening();
 }
-function startListening() {
-  if (!recognition) return;
-  try { recognition.start(); } catch(e) {}
-}
-function stopListening() {
-  isListening = false;
-  setOrbState('idle');
-  if (recognition) try { recognition.stop(); } catch(e) {}
-}
-function setOrbState(state) {
+function startListening(){ if(!recognition) return; try{ recognition.start(); }catch(e){} }
+function stopListening(){ isListening=false; setOrbState('idle'); if(recognition) try{ recognition.stop(); }catch(e){} }
+
+function setOrbState(state){
   const orb = document.getElementById('orb');
   const label = document.getElementById('orbLabel');
-  orb.className = 'globe-container' + (state !== 'idle' ? ' ' + state : '');
-  if (state === 'listening')     { label.textContent = 'Listening…';  globeState = 'listening'; }
-  else if (state === 'thinking') { label.textContent = 'Thinking…';   globeState = 'thinking'; }
-  else if (state === 'speaking') { label.textContent = 'Speaking…';   globeState = 'speaking'; }
-  else                           { label.textContent = 'Tap to speak';globeState = 'idle'; }
+  orb.className = 'globe-container'+(state!=='idle'?' '+state:'');
+  const labels = { listening:'LISTENING…', thinking:'THINKING…', speaking:'SPEAKING…', idle:'TAP TO SPEAK' };
+  label.textContent = labels[state]||'TAP TO SPEAK';
+  globeState = state;
+}
+
+// ── SPEECH SYNTHESIS ─────────────────────────────────────────
+function speak(text){
+  if(!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  const trySpeak = () => {
+    const voices = window.speechSynthesis.getVoices();
+    const maleVoice =
+      voices.find(v=>/google uk english male/i.test(v.name)) ||
+      voices.find(v=>/daniel/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/james/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/mark/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/david/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/oliver/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/male/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>v.lang==='en-GB') ||
+      voices.find(v=>v.lang.startsWith('en')) || null;
+    if(maleVoice) utt.voice = maleVoice;
+    utt.lang = maleVoice?maleVoice.lang:'en-GB';
+    utt.rate=0.95; utt.pitch=0.9;
+    utt.onstart=()=>{ isSpeaking=true; setOrbState('speaking'); };
+    utt.onend=()=>{ isSpeaking=false; setOrbState('idle'); };
+    utt.onerror=()=>{ isSpeaking=false; setOrbState('idle'); };
+    window.speechSynthesis.speak(utt);
+  };
+  if(window.speechSynthesis.getVoices().length) trySpeak();
+  else window.speechSynthesis.onvoiceschanged = trySpeak;
 }
 
 // ── GLOBE ANIMATION ──────────────────────────────────────────
 var globeState = 'idle';
-(function() {
+(function(){
   const canvas = document.getElementById('globeCanvas');
   const ctx = canvas.getContext('2d');
-  const W = 160, H = 160, CX = W/2, CY = H/2, R = 68;
+  const W=200, H=200, CX=W/2, CY=H/2, R=90;
 
-  // Latitude lines
-  const latLines = [-60,-40,-20,0,20,40,60];
-  // Longitude lines (angles in degrees)
-  const lonCount = 8;
-  // Flowing particles
-  const particles = [];
-  for (let i = 0; i < 28; i++) {
-    particles.push({
-      lat: (Math.random()-0.5)*Math.PI,   // -π/2 .. π/2
-      lon: Math.random()*Math.PI*2,
-      speed: 0.004 + Math.random()*0.006,
-      size:  0.8 + Math.random()*1.2,
-      alpha: 0.3 + Math.random()*0.5
-    });
+  // Stars inside the globe
+  const innerStars = Array.from({length:60},()=>({
+    lat:(Math.random()-0.5)*Math.PI,
+    lon:Math.random()*Math.PI*2,
+    size:Math.random()*1.4+0.3,
+    alpha:Math.random()*0.7+0.2
+  }));
+
+  // Flowing energy particles
+  const particles = Array.from({length:35},()=>({
+    lat:(Math.random()-0.5)*Math.PI,
+    lon:Math.random()*Math.PI*2,
+    speed:0.003+Math.random()*0.007,
+    size:0.8+Math.random()*1.5,
+    alpha:0.3+Math.random()*0.6
+  }));
+
+  // Nebula blobs
+  const nebulae = Array.from({length:4},()=>({
+    lat:(Math.random()-0.5)*1.2,
+    lon:Math.random()*Math.PI*2,
+    radius:20+Math.random()*30,
+    hue:Math.random()>0.5?55:200
+  }));
+
+  let rotation=0, frame=0;
+
+  function project(lat,lon,rot){
+    const l=lon+rot;
+    const x=CX+R*Math.cos(lat)*Math.sin(l);
+    const y=CY-R*Math.sin(lat);
+    const z=Math.cos(lat)*Math.cos(l);
+    return {x,y,z};
   }
 
-  let rotation = 0;
-  let frame = 0;
-
-  function project(lat, lon, rot) {
-    // Rotate lon
-    const l = lon + rot;
-    const x = CX + R * Math.cos(lat) * Math.sin(l);
-    const y = CY - R * Math.sin(lat);
-    const z = Math.cos(lat) * Math.cos(l); // depth: >0 = front
-    return { x, y, z };
+  function stateCol(){
+    if(globeState==='listening') return {r:212,g:175,b:55};
+    if(globeState==='thinking')  return {r:167,g:139,b:255};
+    if(globeState==='speaking')  return {r:0,  g:212,b:255};
+    return {r:140,g:110,b:30};
   }
 
-  function stateColor() {
-    if (globeState === 'listening') return { r:212, g:175, b:55  };
-    if (globeState === 'thinking')  return { r:168, g:138, b:255 };
-    if (globeState === 'speaking')  return { r:74,  g:222, b:128 };
-    return { r:180, g:140, b:40 };
-  }
-
-  function draw() {
+  function draw(){
     frame++;
-    ctx.clearRect(0, 0, W, H);
+    ctx.clearRect(0,0,W,H);
+    const col=stateCol();
+    const cs=`${col.r},${col.g},${col.b}`;
+    const rotSpeed = globeState==='idle'?0.002:globeState==='listening'?0.007:globeState==='thinking'?0.014:0.005;
+    rotation+=rotSpeed;
 
-    const col = stateColor();
-    const cs = `${col.r},${col.g},${col.b}`;
-
-    // Speed depends on state
-    let rotSpeed = globeState === 'idle' ? 0.003 : globeState === 'listening' ? 0.008 : globeState === 'thinking' ? 0.012 : 0.006;
-    rotation += rotSpeed;
-
-    // Clip to circle
+    // Clip to sphere
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(CX, CY, R, 0, Math.PI*2);
-    ctx.clip();
+    ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2); ctx.clip();
 
-    // Background sphere gradient
-    const grad = ctx.createRadialGradient(CX-20, CY-20, 5, CX, CY, R);
-    grad.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.07)`);
-    grad.addColorStop(0.6, 'rgba(10,10,10,0.85)');
-    grad.addColorStop(1, 'rgba(5,5,5,0.95)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
+    // Deep space background
+    const bg=ctx.createRadialGradient(CX-15,CY-15,5,CX,CY,R);
+    bg.addColorStop(0,`rgba(${col.r},${col.g},${col.b},0.12)`);
+    bg.addColorStop(0.4,'rgba(8,12,28,0.9)');
+    bg.addColorStop(1,'rgba(2,4,12,0.97)');
+    ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
 
-    // Latitude lines
-    latLines.forEach(function(deg) {
-      const lat = deg * Math.PI/180;
-      const cosLat = Math.cos(lat);
-      const yPos   = CY - R * Math.sin(lat);
-      const rx     = R * cosLat;
-      if (rx < 2) return;
-      ctx.beginPath();
-      ctx.ellipse(CX, yPos, rx, rx*0.15, 0, 0, Math.PI*2);
-      ctx.strokeStyle = `rgba(${cs},0.12)`;
-      ctx.lineWidth = 0.6;
-      ctx.stroke();
+    // Nebula clouds
+    nebulae.forEach(n=>{
+      const pt=project(n.lat,n.lon,rotation);
+      if(pt.z<0.1) return;
+      const grd=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,n.radius*pt.z);
+      grd.addColorStop(0,`hsla(${n.hue},80%,60%,${0.06*pt.z})`);
+      grd.addColorStop(1,'transparent');
+      ctx.fillStyle=grd; ctx.fillRect(0,0,W,H);
     });
 
-    // Longitude lines
-    for (let i = 0; i < lonCount; i++) {
-      const baseLon = (i / lonCount) * Math.PI*2;
-      const lon = baseLon + rotation;
-      const cosLon = Math.cos(lon);
-      // Only draw front-facing meridians (cosLon > -0.2)
-      if (cosLon < -0.2) continue;
-      const alpha = Math.max(0, cosLon) * 0.18;
+    // Inner stars (fixed on sphere)
+    innerStars.forEach(s=>{
+      const pt=project(s.lat,s.lon,rotation);
+      if(pt.z<0) return;
+      const brightness=pt.z*s.alpha*(0.8+0.2*Math.sin(frame*0.03+s.lon));
       ctx.beginPath();
-      for (let step = 0; step <= 40; step++) {
-        const lat = (step/40)*Math.PI - Math.PI/2;
-        const p = project(lat, baseLon, rotation);
-        if (step === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-      }
-      ctx.strokeStyle = `rgba(${cs},${alpha})`;
-      ctx.lineWidth = 0.6;
-      ctx.stroke();
-    }
-
-    // Flowing particles
-    const pulseMult = globeState === 'listening' ? (1 + 0.4*Math.sin(frame*0.12)) :
-                      globeState === 'thinking'  ? (1 + 0.6*Math.sin(frame*0.18)) :
-                      globeState === 'speaking'  ? (1 + 0.5*Math.sin(frame*0.10)) : 1;
-
-    particles.forEach(function(p) {
-      p.lon += p.speed * pulseMult;
-      const pt = project(p.lat, p.lon, rotation);
-      if (pt.z < 0) return; // behind the globe
-      const fade = pt.z * p.alpha;
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, p.size * pt.z, 0, Math.PI*2);
-      ctx.fillStyle = `rgba(${cs},${fade.toFixed(2)})`;
+      ctx.arc(pt.x,pt.y,s.size*Math.min(pt.z+0.2,1),0,Math.PI*2);
+      ctx.fillStyle=`rgba(200,215,255,${brightness})`;
       ctx.fill();
     });
 
+    // Lat lines (very faint)
+    [-60,-30,0,30,60].forEach(deg=>{
+      const lat=deg*Math.PI/180;
+      const yp=CY-R*Math.sin(lat);
+      const rx=R*Math.cos(lat);
+      if(rx<2) return;
+      ctx.beginPath();
+      ctx.ellipse(CX,yp,rx,rx*0.13,0,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(${cs},0.07)`; ctx.lineWidth=0.5; ctx.stroke();
+    });
+
+    // Lon lines
+    for(let i=0;i<6;i++){
+      const baseLon=(i/6)*Math.PI*2;
+      const cosLon=Math.cos(baseLon+rotation);
+      if(cosLon<-0.1) continue;
+      const alpha=Math.max(0,cosLon)*0.10;
+      ctx.beginPath();
+      for(let s=0;s<=36;s++){
+        const lat=(s/36)*Math.PI-Math.PI/2;
+        const p=project(lat,baseLon,rotation);
+        if(s===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+      }
+      ctx.strokeStyle=`rgba(${cs},${alpha})`; ctx.lineWidth=0.5; ctx.stroke();
+    }
+
+    // Energy particles
+    const pulse=globeState==='idle'?1:(1+0.5*Math.sin(frame*(globeState==='thinking'?0.18:0.10)));
+    particles.forEach(p=>{
+      p.lon+=p.speed*pulse;
+      const pt=project(p.lat,p.lon,rotation);
+      if(pt.z<0) return;
+      const fade=pt.z*p.alpha;
+      // Trail
+      const trail=project(p.lat,p.lon-p.speed*8,rotation);
+      if(trail.z>0){
+        ctx.beginPath();
+        ctx.moveTo(trail.x,trail.y); ctx.lineTo(pt.x,pt.y);
+        ctx.strokeStyle=`rgba(${cs},${(fade*0.3).toFixed(2)})`; ctx.lineWidth=0.6; ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(pt.x,pt.y,p.size*(0.5+pt.z*0.5),0,Math.PI*2);
+      ctx.fillStyle=`rgba(${cs},${fade.toFixed(2)})`; ctx.fill();
+    });
+
     ctx.restore();
 
-    // Outer glow rim
-    const rim = ctx.createRadialGradient(CX, CY, R-6, CX, CY, R+3);
-    rim.addColorStop(0, `rgba(${cs},0.0)`);
-    rim.addColorStop(0.5, `rgba(${cs},${globeState==='idle'?0.06:0.15})`);
-    rim.addColorStop(1, `rgba(${cs},0.0)`);
-    ctx.beginPath();
-    ctx.arc(CX, CY, R+2, 0, Math.PI*2);
-    ctx.strokeStyle = rim;
-    ctx.lineWidth = 6;
-    ctx.stroke();
+    // Glow rim
+    const rim=ctx.createRadialGradient(CX,CY,R-8,CX,CY,R+4);
+    rim.addColorStop(0,`rgba(${cs},0.0)`);
+    rim.addColorStop(0.5,`rgba(${cs},${globeState==='idle'?0.08:0.22})`);
+    rim.addColorStop(1,`rgba(${cs},0.0)`);
+    ctx.beginPath(); ctx.arc(CX,CY,R+2,0,Math.PI*2);
+    ctx.strokeStyle=rim; ctx.lineWidth=8; ctx.stroke();
 
-    // Specular highlight
-    const spec = ctx.createRadialGradient(CX-24, CY-24, 2, CX-20, CY-20, 40);
-    spec.addColorStop(0, 'rgba(255,255,255,0.12)');
-    spec.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(CX, CY, R, 0, Math.PI*2);
-    ctx.clip();
-    ctx.fillStyle = spec;
-    ctx.fillRect(0,0,W,H);
-    ctx.restore();
+    // Specular
+    const spec=ctx.createRadialGradient(CX-28,CY-28,2,CX-22,CY-22,42);
+    spec.addColorStop(0,'rgba(255,255,255,0.14)'); spec.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.save(); ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2); ctx.clip();
+    ctx.fillStyle=spec; ctx.fillRect(0,0,W,H); ctx.restore();
 
     requestAnimationFrame(draw);
   }
-
   draw();
 })();
-function setTranscript(text, hasText) {
-  const el = document.getElementById('transcript');
-  el.textContent = text || 'Listening for your command…';
-  el.className = 'transcript' + (hasText ? ' has-text' : '');
+
+// ── HELPERS ──────────────────────────────────────────────────
+function getTimeOfDay(){ const h=new Date().getHours(); return h<12?'morning':h<17?'afternoon':'evening'; }
+function formatRand(val){ if(val==null||val==='') return 'R 0.00'; return 'R '+Number(val).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function setTranscript(text,hasText){ const el=document.getElementById('transcript'); el.textContent=text||'Listening for your command…'; el.className='transcript'+(hasText?' has-text':''); }
+function showLoading(){ document.getElementById('responseBody').textContent='Fetching data…'; setOrbState('thinking'); }
+function respond(text){ document.getElementById('responseBody').textContent=text; addHistory(document.getElementById('transcript').textContent,text); setOrbState('idle'); speak(text); }
+function sendText(){ const input=document.getElementById('textInput'); const val=input.value.trim(); if(!val) return; input.value=''; setTranscript(val,true); handleCommand(val); }
+
+function addHistory(q,a){
+  if(!q||q==='Listening for your command…'||q==='Listening…') return;
+  const h=document.getElementById('history');
+  const div=document.createElement('div'); div.className='history-item';
+  div.innerHTML='<div class="h-q">YOU SAID</div><div style="margin-bottom:6px;font-size:13px;">'+q+'</div><div class="h-q">JARVIS</div><div class="h-a">'+a.substring(0,200)+(a.length>200?'…':'')+'</div>';
+  h.insertBefore(div,h.firstChild);
+  if(h.children.length>5) h.removeChild(h.lastChild);
 }
 
-// ── SPEECH SYNTHESIS ────────────────────────────────────────
-function speak(text) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utt = new SpeechSynthesisUtterance(text);
-
-  const trySpeak = () => {
-    const voices = window.speechSynthesis.getVoices();
-
-    // Priority order: closest to Jarvis (calm, precise, British male)
-    const maleVoice =
-      voices.find(v => /google uk english male/i.test(v.name)) ||
-      voices.find(v => /daniel/i.test(v.name) && v.lang.startsWith('en')) ||
-      voices.find(v => /james/i.test(v.name) && v.lang.startsWith('en')) ||
-      voices.find(v => /mark/i.test(v.name) && v.lang.startsWith('en')) ||
-      voices.find(v => /david/i.test(v.name) && v.lang.startsWith('en')) ||
-      voices.find(v => /oliver/i.test(v.name) && v.lang.startsWith('en')) ||
-      voices.find(v => /arthur/i.test(v.name) && v.lang.startsWith('en')) ||
-      voices.find(v => /male/i.test(v.name) && v.lang.startsWith('en')) ||
-      voices.find(v => v.lang === 'en-GB') ||
-      voices.find(v => v.lang.startsWith('en')) ||
-      null;
-
-    if (maleVoice) utt.voice = maleVoice;
-
-    // Jarvis tone — measured, calm, slightly slower than default
-    utt.lang  = maleVoice ? maleVoice.lang : 'en-GB';
-    utt.rate  = 0.95;
-    utt.pitch = 0.9;
-
-    utt.onstart = () => { isSpeaking = true; setOrbState('speaking'); };
-    utt.onend   = () => { isSpeaking = false; setOrbState('idle'); };
-    utt.onerror = () => { isSpeaking = false; setOrbState('idle'); };
-    window.speechSynthesis.speak(utt);
-  };
-
-  // Voices may not be loaded yet on first call
-  if (window.speechSynthesis.getVoices().length) trySpeak();
-  else window.speechSynthesis.onvoiceschanged = trySpeak;
-}
-
-// ── HELPERS ─────────────────────────────────────────────────
-function getTimeOfDay() {
-  const h = new Date().getHours();
-  return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
-}
-function formatRand(val) {
-  if (val == null || val === '') return 'R 0.00';
-  return 'R ' + Number(val).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-function showLoading() {
-  document.getElementById('responseBody').textContent = 'Fetching data…';
-  setOrbState('thinking');
-}
-function respond(text) {
-  document.getElementById('responseBody').textContent = text;
-  addHistory(document.getElementById('transcript').textContent, text);
-  speak(text);
-}
-function addHistory(q, a) {
-  if (!q || q === 'Listening for your command…' || q === 'Listening…') return;
-  const h = document.getElementById('history');
-  const div = document.createElement('div');
-  div.className = 'history-item';
-  div.innerHTML = '<div class="h-q">YOU SAID</div><div style="margin-bottom:8px;font-size:13px;">' +
-    q + '</div><div class="h-q">JARVIS</div><div class="h-a">' + a.substring(0, 200) + (a.length > 200 ? '…' : '') + '</div>';
-  h.insertBefore(div, h.firstChild);
-  if (h.children.length > 5) h.removeChild(h.lastChild);
-}
-function sendText() {
-  const input = document.getElementById('textInput');
-  const val = input.value.trim();
-  if (!val) return;
-  input.value = '';
-  setTranscript(val, true);
-  handleCommand(val);
-}
-
-// ── COMMAND ROUTER ───────────────────────────────────────────
-function handleCommand(text) {
-  const t = text.toLowerCase().trim();
+// ── COMMAND ROUTER ────────────────────────────────────────────
+function handleCommand(text){
+  const t=text.toLowerCase().trim();
   showLoading();
 
-  // ── Greetings — instant, no API needed ──
-  if (/^(hello|hi|hey|good morning|good afternoon|good evening|howzit|hallo)/.test(t)) {
-    respond('Good ' + getTimeOfDay() + ". I'm Jarvis, your IVA business assistant. How can I help you?");
-    return;
+  if(/^(hello|hi|hey|good morning|good afternoon|good evening|howzit|hallo)/.test(t)){
+    respond('Good '+getTimeOfDay()+". I'm Jarvis, your IVA business assistant. How can I help you?"); return;
   }
-  if (/thank|cheers|dankie/.test(t)) {
-    respond("You're welcome. Anything else I can help you with?");
-    return;
-  }
+  if(/thank|cheers|dankie/.test(t)){ respond("You're welcome. Anything else I can help you with?"); return; }
 
-  // ── Business data queries — fetch live data, then ask Gemini ──
   var needsLeads       = /lead|leed|leen|leeds|find |look up|read me|client|deal/.test(t);
   var needsContractors = /contractor|agent|ic code|who submitted|performance|active contractor|how many contractor|how many agent/.test(t);
   var needsFinancials  = /financial|finance|money|income|expense|bank|balance|spend/.test(t);
   var needsOverview    = /overview|briefing|summary|what('s| is) (happening|going on)|how are we doing/.test(t);
 
-  if (needsLeads || needsContractors || needsFinancials || needsOverview) {
-    // Decide which data to fetch
-    var fetches = [];
-    if (needsLeads || needsOverview)       fetches.push(callBackend('getLeads').catch(function(){return null;}));
-    else                                   fetches.push(Promise.resolve(null));
-    if (needsContractors || needsOverview) fetches.push(callBackend('getContractors').catch(function(){return null;}));
-    else                                   fetches.push(Promise.resolve(null));
-    if (needsFinancials || needsOverview)  fetches.push(callBackend('getSummary').catch(function(){return null;}));
-    else                                   fetches.push(Promise.resolve(null));
+  if(needsLeads||needsContractors||needsFinancials||needsOverview){
+    var fetches=[];
+    fetches.push((needsLeads||needsOverview)?callBackend('getLeads').catch(()=>null):Promise.resolve(null));
+    fetches.push((needsContractors||needsOverview)?callBackend('getContractors').catch(()=>null):Promise.resolve(null));
+    fetches.push((needsFinancials||needsOverview)?callBackend('getSummary').catch(()=>null):Promise.resolve(null));
 
-    Promise.all(fetches).then(function(results) {
-      var leadsData  = results[0];
-      var ctData     = results[1];
-      var finData    = results[2];
-      var today      = new Date().toDateString();
-
-      // Build context block for Gemini
-      var context = 'You are Jarvis, a professional British male AI business assistant for IVA — a South African used heavy vehicle and machinery brokerage. ' +
-        'Be concise, clear and professional. Speak in first person as Jarvis. Do not use markdown or bullet symbols — plain spoken sentences only. ' +
-        'Today is ' + today + '.\n\n';
-
-      if (leadsData && !leadsData.error) {
-        var leads = leadsData.leads || [];
-        var statuses = {new:0, contacted:0, won:0, lost:0};
-        leads.forEach(function(l){ var s=(l.status||'new').toLowerCase(); if(statuses[s]!==undefined) statuses[s]++; });
-        context += 'LEADS DATA: Total leads: ' + leadsData.total + '. New: ' + statuses.new + ', Contacted: ' + statuses.contacted + ', Won: ' + statuses.won + ', Lost: ' + statuses.lost + '.\n';
-        // Recent leads sample
-        var recent = leads.slice(0,10).map(function(l){
-          return l.clientName + ' (' + l.status + ', ' + l.timestamp + ', IC:' + l.icCode + (l.comments ? ', note:'+l.comments : '') + ')';
-        });
-        context += 'Recent leads: ' + recent.join(' | ') + '\n\n';
+    Promise.all(fetches).then(function(results){
+      var leadsData=results[0], ctData=results[1], finData=results[2];
+      var today=new Date().toDateString();
+      var context='You are Jarvis, a professional British male AI business assistant for IVA — a South African used heavy vehicle and machinery brokerage. '+
+        'Be concise, clear and professional. Speak in first person as Jarvis. Do not use markdown or bullet symbols — plain spoken sentences only. '+
+        'Today is '+today+'.\n\n';
+      if(leadsData&&!leadsData.error){
+        var leads=leadsData.leads||[];
+        var st={new:0,contacted:0,won:0,lost:0};
+        leads.forEach(l=>{ var s=(l.status||'new').toLowerCase(); if(st[s]!==undefined) st[s]++; });
+        context+='LEADS DATA: Total: '+leadsData.total+'. New:'+st.new+', Contacted:'+st.contacted+', Won:'+st.won+', Lost:'+st.lost+'.\n';
+        context+='Recent: '+leads.slice(0,10).map(l=>l.clientName+'('+l.status+','+l.timestamp+',IC:'+l.icCode+')').join(' | ')+'\n\n';
       }
-
-      if (ctData && !ctData.error) {
-        var cts = ctData.contractors || [];
-        context += 'CONTRACTORS: ' + cts.length + ' contractors total. ';
-        context += cts.slice(0,10).map(function(c){
-          return c.name+'('+c.icCode+'): '+c.total+' leads, won:'+c.won+', contacted:'+c.contacted+', last:'+c.lastLeadDate;
-        }).join(' | ') + '\n\n';
+      if(ctData&&!ctData.error){
+        var cts=ctData.contractors||[];
+        context+='CONTRACTORS: '+cts.length+' total. '+cts.slice(0,10).map(c=>c.name+'('+c.icCode+'):'+c.total+' leads,won:'+c.won+',last:'+c.lastLeadDate).join(' | ')+'\n\n';
       }
-
-      if (finData && finData.summary) {
-        var s = finData.summary;
-        context += 'FINANCIALS: Period: ' + (s.period||'unknown') + '. Income: R' + s.income + ', Expenses: R' + s.expenses +
-          ', Bank charges: R' + s.bankCharges + ', Balance: R' + s.closingBalance + ', Transactions: ' + s.transactionCount + '\n\n';
+      if(finData&&finData.summary){
+        var s=finData.summary;
+        context+='FINANCIALS: Period:'+s.period+'. Income:R'+s.income+', Expenses:R'+s.expenses+', Balance:R'+s.closingBalance+'\n\n';
       }
-
-      context += 'USER QUESTION: ' + text;
-
+      context+='USER QUESTION: '+text;
       return askGemini(context);
-    }).then(function(answer) {
-      respond(answer);
-    }).catch(function(err) {
-      respond('I ran into a problem fetching your data: ' + err.message);
-    });
-
+    }).then(answer=>respond(answer)).catch(err=>respond('Problem fetching data: '+err.message));
   } else {
-    // ── General question — straight to Gemini ──
-    var prompt = 'You are Jarvis, a professional British male AI assistant. Be concise and spoken — no markdown, no bullet symbols, plain sentences only. ' +
-      'Answer this question: ' + text;
-    askGemini(prompt).then(function(answer) {
-      respond(answer);
-    }).catch(function(err) {
-      respond('I could not reach Gemini: ' + err.message);
-    });
+    var prompt='You are Jarvis, a professional British male AI assistant. Be concise and spoken — no markdown, no bullet symbols. Answer: '+text;
+    askGemini(prompt).then(answer=>respond(answer)).catch(err=>respond('I could not reach the AI: '+err.message));
   }
 }
 
-// ── FINANCIALS ───────────────────────────────────────────────
-function cmdFinancials() {
-  callBackend('getSummary')
-    .then(function(data) {
-      if (!data || !data.summary) {
-        respond('Financial data is not available right now.');
+// ── CONTRACTORS ───────────────────────────────────────────────
+function cmdContractors(t){
+  showLoading();
+  callBackend('getContractors').then(function(data){
+    if(data.error){ respond('Could not read contractor data: '+data.error); return; }
+    var contractors=data.contractors||[];
+    if(!contractors.length){ respond('No contractor data found.'); return; }
+    var now2=new Date(), sinceMs=null, sinceLabel2='';
+    if(/2 month|two month/.test(t)){sinceMs=now2.getTime()-60*24*60*60*1000;sinceLabel2='the last 2 months';}
+    else if(/3 month|three month/.test(t)){sinceMs=now2.getTime()-90*24*60*60*1000;sinceLabel2='the last 3 months';}
+    else if(/6 month|six month/.test(t)){sinceMs=now2.getTime()-180*24*60*60*1000;sinceLabel2='the last 6 months';}
+    else if(/this month/.test(t)){var d=new Date(now2.getFullYear(),now2.getMonth(),1);sinceMs=d.getTime();sinceLabel2='this month';}
+    else if(/last month/.test(t)){var d=new Date(now2.getFullYear(),now2.getMonth()-1,1);sinceMs=d.getTime();sinceLabel2='last month';}
+    else if(/this week/.test(t)){var d=new Date(now2);d.setDate(d.getDate()-((d.getDay()+6)%7));sinceMs=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();sinceLabel2='this week';}
+    else if(/today/.test(t)){var d=new Date(now2.getFullYear(),now2.getMonth(),now2.getDate());sinceMs=d.getTime();sinceLabel2='today';}
+    if(/how many|count|active|who submitted|who put in/.test(t)&&!/for [a-z]/.test(t)){
+      var period=sinceMs||(now2.getTime()-30*24*60*60*1000);
+      var label=sinceLabel2||'the last 30 days';
+      var active=contractors.filter(c=>c.leads.some(l=>new Date(l.timestamp).getTime()>=period));
+      respond(active.length+' contractor'+(active.length!==1?'s':'')+' submitted leads in '+label+', out of '+contractors.length+' on the system.\n\n'+
+        active.map(c=>{var cnt=c.leads.filter(l=>new Date(l.timestamp).getTime()>=period).length; return c.name+' ('+c.icCode+'): '+cnt+' lead'+(cnt!==1?'s':'');}).join('\n'));
+      return;
+    }
+    var nm=t.match(/(?:for|how is|how did|show me)\s+([a-z]+(?: [a-z]+)?)/i);
+    if(nm){
+      var cand=nm[1].toLowerCase().trim();
+      if(!/^(all|this|last|the|a|an|of|in|week|month|today|performance|contractor|agent|me)$/.test(cand)){
+        var found=contractors.filter(c=>c.name.toLowerCase().indexOf(cand)!==-1||c.icCode.toLowerCase().indexOf(cand)!==-1);
+        if(!found.length){ respond('No contractor found matching "'+cand+'".'); return; }
+        respond(found.map(c=>c.name+' (IC: '+c.icCode+'):\n  Total: '+c.total+' leads\n  New: '+c.new+', Contacted: '+c.contacted+', Won: '+c.won+', Lost: '+c.lost+(c.lastLeadDate?'\n  Last lead: '+c.lastLeadDate:'')).join('\n\n'));
         return;
       }
-      const s = data.summary;
-      respond(
-        'Financial overview for ' + (s.period || 'this period') + ':\n\n' +
-        'Income: ' + formatRand(s.income) + '\n' +
-        'Expenses: ' + formatRand(s.expenses) + '\n' +
-        'Bank charges: ' + formatRand(s.bankCharges) + '\n' +
-        'Current balance: ' + formatRand(s.closingBalance) + '\n' +
-        'Available credit: ' + formatRand(s.availableCredit) + '\n' +
-        'Transactions: ' + s.transactionCount
-      );
-    })
-    .catch(function(err) {
-      respond('Could not reach financial data: ' + err.message);
-    });
+    }
+    var top=contractors.slice(0,8);
+    respond('Contractor performance — '+contractors.length+' on system.\n\n'+top.map((c,i)=>(i+1)+'. '+c.name+': '+c.total+' leads — Won:'+c.won+', Contacted:'+c.contacted+', New:'+c.new).join('\n'));
+  }).catch(err=>respond('Could not reach contractor data: '+err.message));
 }
-
-// ── LEADS ────────────────────────────────────────────────────
-function cmdLeads(t) {
-  showLoading();
-  callBackend('getLeads')
-    .then(function(data) {
-      if (data.error) { respond('I could not read the leads: ' + data.error); return; }
-      if (data.total === 0) { respond('There are no leads in the system yet.'); return; }
-
-      // ── PARSE NAME SEARCH ──
-      var nameSearch = null;
-      var nameMatch = t.match(/(?:lead for|find|look up|lookup)\s+([a-z]+(?: [a-z]+)?)/i);
-      if (nameMatch) nameSearch = nameMatch[1].toLowerCase().trim();
-
-      // ── PARSE DATE ──
-      var targetDate = null;
-      var targetLabel = '';
-      var now = new Date();
-
-      if (/today|todays|today's/.test(t)) {
-        targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        targetLabel = 'today';
-      } else if (/yesterday/.test(t)) {
-        targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-        targetLabel = 'yesterday';
-      } else if (/last\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/.test(t)) {
-        var dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-        var dm = t.match(/last\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
-        var td = dayNames.indexOf(dm[1]);
-        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() - td + 7) % 7 || 7));
-        targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        targetLabel = 'last ' + dm[1];
-      } else if (/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/.test(t)) {
-        var dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-        var dm = t.match(/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
-        var td = dayNames.indexOf(dm[1]);
-        var diff = (now.getDay() - td + 7) % 7; if (diff === 0) diff = 7;
-        var d = new Date(now); d.setDate(d.getDate() - diff);
-        targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        targetLabel = dm[1];
-      } else if (/this week/.test(t)) {
-        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-        targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        targetLabel = 'this week';
-      } else if (/last week/.test(t)) {
-        var d = new Date(now); d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 7);
-        targetDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        targetLabel = 'last week';
-      }
-
-      // ── PARSE STATUS ──
-      var statusFilter = null, statusLabel = '';
-      if (/contacted/.test(t))     { statusFilter = 'contacted'; statusLabel = 'contacted'; }
-      else if (/\bnew\b/.test(t))  { statusFilter = 'new';       statusLabel = 'new'; }
-      else if (/\bwon\b/.test(t))  { statusFilter = 'won';       statusLabel = 'won'; }
-      else if (/\blost\b/.test(t)) { statusFilter = 'lost';      statusLabel = 'lost'; }
-
-      // ── FILTER ──
-      var subset;
-      if (nameSearch) {
-        subset = data.leads.filter(function(l) {
-          var nm = l.clientName.toLowerCase().indexOf(nameSearch) !== -1;
-          var dm = true;
-          if (targetDate) {
-            var isWeek = /week/.test(targetLabel);
-            var re = new Date(targetDate.getTime() + (isWeek ? 7 : 1) * 86400000);
-            var ld = new Date(l.timestamp); dm = ld >= targetDate && ld < re;
-          }
-          var sm = statusFilter ? l.status.toLowerCase().indexOf(statusFilter) !== -1 : true;
-          return nm && dm && sm;
-        });
-        targetLabel = targetLabel || nameSearch;
-      } else if (targetDate) {
-        var isWeek = /week/.test(targetLabel);
-        var rangeEnd = new Date(targetDate.getTime() + (isWeek ? 7 : 1) * 86400000);
-        subset = data.leads.filter(function(l) {
-          if (!l.timestamp) return false;
-          var ld = new Date(l.timestamp);
-          var dm = ld >= targetDate && ld < rangeEnd;
-          var sm = statusFilter ? l.status.toLowerCase().indexOf(statusFilter) !== -1 : true;
-          return dm && sm;
-        });
-      } else if (statusFilter) {
-        subset = data.leads.filter(function(l) {
-          return l.status.toLowerCase().indexOf(statusFilter) !== -1;
-        });
-      } else if (!nameSearch && !statusFilter) {
-        subset = data.leads.slice(0, 5);
-        targetLabel = 'most recent';
-      } else {
-        subset = [];
-      }
-
-      var combinedLabel = [nameSearch ? 'search: ' + nameSearch : '', targetLabel, statusLabel].filter(Boolean).join(', ') || 'most recent';
-      var summary = 'You have ' + data.total + ' leads in total. ';
-
-      if (subset.length === 0) {
-        respond(summary + 'No leads found for ' + combinedLabel + '.'); return;
-      }
-
-      summary += subset.length + ' lead' + (subset.length !== 1 ? 's' : '') + ' for ' + combinedLabel + ':\n';
-      var toRead = subset.slice(0, 10);
-      var lines = [summary];
-
-      toRead.forEach(function(l, i) {
-        lines.push(
-          'Lead ' + (i + 1) + ': ' +
-          (l.clientName || 'Unknown client') + '. ' +
-          'Phone: ' + (l.clientPhone || 'not provided') + '. ' +
-          'Looking for: ' + (l.product || 'not specified') + '. ' +
-          'Submitted by: ' + (l.icCode || 'unknown') + '. ' +
-          'Status: ' + l.status + '. ' +
-          'Submitted: ' + (l.timestamp || 'unknown') + '.' +
-          (showComments && l.comments   ? ' Contractor note: ' + l.comments + '.' : '') +
-          (showComments && l.adminNotes ? ' Admin update: ' + l.adminNotes + '.' : '')
-        );
-      });
-
-      if (subset.length > 10) lines.push('There are ' + (subset.length - 10) + ' more. Ask for all leads if you need the full list.');
-      respond(lines.join('\n\n'));
-    })
-    .catch(function(err) {
-      respond('Could not reach the leads system: ' + err.message);
-    });
-}
-
-// ── CONTRACTORS ──────────────────────────────────────────────
-function cmdContractors(t) {
-  showLoading();
-  callBackend('getContractors')
-    .then(function(data) {
-      if (data.error) { respond('Could not read contractor data: ' + data.error); return; }
-      var contractors = data.contractors || [];
-      if (contractors.length === 0) { respond('No contractor data found.'); return; }
-
-      // ── Resolve timeframe first (used by multiple branches) ──
-      var now2 = new Date();
-      var sinceMs = null, sinceLabel2 = '';
-      if (/2 month|two month/.test(t))       { sinceMs = now2.getTime() - 60*24*60*60*1000; sinceLabel2 = 'the last 2 months'; }
-      else if (/3 month|three month/.test(t)) { sinceMs = now2.getTime() - 90*24*60*60*1000; sinceLabel2 = 'the last 3 months'; }
-      else if (/6 month|six month/.test(t))  { sinceMs = now2.getTime() - 180*24*60*60*1000; sinceLabel2 = 'the last 6 months'; }
-      else if (/this month/.test(t))         { var d=new Date(now2.getFullYear(),now2.getMonth(),1); sinceMs=d.getTime(); sinceLabel2='this month'; }
-      else if (/last month/.test(t))         { var d=new Date(now2.getFullYear(),now2.getMonth()-1,1); sinceMs=d.getTime(); sinceLabel2='last month'; }
-      else if (/this week/.test(t))          { var d=new Date(now2); d.setDate(d.getDate()-((d.getDay()+6)%7)); d=new Date(d.getFullYear(),d.getMonth(),d.getDate()); sinceMs=d.getTime(); sinceLabel2='this week'; }
-      else if (/last week/.test(t))          { var d=new Date(now2); d.setDate(d.getDate()-((d.getDay()+6)%7)-7); d=new Date(d.getFullYear(),d.getMonth(),d.getDate()); sinceMs=d.getTime(); sinceLabel2='last week'; }
-      else if (/today/.test(t))              { var d=new Date(now2.getFullYear(),now2.getMonth(),now2.getDate()); sinceMs=d.getTime(); sinceLabel2='today'; }
-
-      // ── Active count / who is active query ──
-      if (/how many|count|active|who is active|who are active|who submitted|who put in|who bring|who brought/.test(t) && !/for [a-z]/.test(t)) {
-        var period = sinceMs;
-        var label  = sinceLabel2;
-
-        // Default: show last 30 days if no period given
-        if (!period) { period = now2.getTime() - 30*24*60*60*1000; label = 'the last 30 days'; }
-
-        var active = contractors.filter(function(c) {
-          return c.leads.some(function(l) { return new Date(l.timestamp).getTime() >= period; });
-        });
-
-        if (/how many/.test(t)) {
-          respond(
-            active.length + ' contractor' + (active.length !== 1 ? 's' : '') +
-            ' submitted leads in ' + label + ', out of ' + contractors.length + ' on the system.\n\n' +
-            active.map(function(c) {
-              var cnt = c.leads.filter(function(l) { return new Date(l.timestamp).getTime() >= period; }).length;
-              return c.name + ' (' + c.icCode + '): ' + cnt + ' lead' + (cnt !== 1 ? 's' : '');
-            }).join('\n')
-          );
-        } else {
-          // "who is active" / "who submitted"
-          if (active.length === 0) { respond('No contractors submitted leads in ' + label + '.'); return; }
-          var lines = [active.length + ' contractor' + (active.length !== 1 ? 's' : '') + ' active in ' + label + ':\n'];
-          active.forEach(function(c) {
-            var cnt = c.leads.filter(function(l) { return new Date(l.timestamp).getTime() >= period; }).length;
-            lines.push(c.name + ' (' + c.icCode + '): ' + cnt + ' lead' + (cnt !== 1 ? 's' : ''));
-          });
-          respond(lines.join('\n'));
-        }
-        return;
-      }
-
-      // ── Specific contractor lookup ──
-      var nameSearch = null;
-      var nm = t.match(/(?:for|how is|how did|show me)\s+([a-z]+(?: [a-z]+)?)/i);
-      if (nm) {
-        var candidate = nm[1].toLowerCase().trim();
-        // Block generic words from being treated as names
-        if (!/^(all|this|last|the|a|an|of|in|week|month|today|performance|contractor|agent|me)$/.test(candidate)) {
-          nameSearch = candidate;
-        }
-      }
-
-      if (nameSearch) {
-        var found = contractors.filter(function(c) {
-          return c.name.toLowerCase().indexOf(nameSearch) !== -1 ||
-                 c.icCode.toLowerCase().indexOf(nameSearch) !== -1;
-        });
-        if (found.length === 0) {
-          respond('No contractor found matching "' + nameSearch + '".');
-          return;
-        }
-        var lines = [];
-        found.forEach(function(c) {
-          lines.push(
-            c.name + ' (IC: ' + c.icCode + '):\n' +
-            '  Total leads: ' + c.total + '\n' +
-            '  New: ' + c.new + ', Contacted: ' + c.contacted + ', Won: ' + c.won + ', Lost: ' + c.lost + '\n' +
-            (c.lastLeadDate ? '  Last lead submitted: ' + c.lastLeadDate : '')
-          );
-        });
-        respond(lines.join('\n\n'));
-        return;
-      }
-
-      // ── Overall performance / default ──
-      var top = contractors.slice(0, 8);
-      var lines = ['Contractor performance overview. ' + contractors.length + ' active contractors.\n'];
-      top.forEach(function(c, i) {
-        lines.push(
-          (i + 1) + '. ' + c.name + ': ' + c.total + ' leads — ' +
-          'Won: ' + c.won + ', Contacted: ' + c.contacted + ', New: ' + c.new + ', Lost: ' + c.lost
-        );
-      });
-      if (contractors.length > 8) lines.push('...and ' + (contractors.length - 8) + ' more contractors.');
-      respond(lines.join('\n'));
-    })
-    .catch(function(err) {
-      respond('Could not reach contractor data: ' + err.message);
-    });
-}
-
-// ── OVERVIEW ─────────────────────────────────────────────────
-function cmdOverview() {
-  showLoading();
-  callBackend('getSummary')
-    .then(function(finData) {
-      return callBackend('getLeads').then(function(leadsData) {
-        var lines = ['Here is your IVA business overview:\n'];
-        if (finData && finData.summary) {
-          var s = finData.summary;
-          lines.push('Income: ' + formatRand(s.income));
-          lines.push('Expenses: ' + formatRand(s.expenses));
-          lines.push('Balance: ' + formatRand(s.closingBalance));
-        }
-        if (leadsData && !leadsData.error) {
-          lines.push('Total leads: ' + leadsData.total);
-          var newLeads = (leadsData.leads || []).filter(function(l) {
-            return l.status.toLowerCase() === 'new';
-          });
-          lines.push('New leads: ' + newLeads.length);
-          var contacted = (leadsData.leads || []).filter(function(l) {
-            return l.status.toLowerCase() === 'contacted';
-          });
-          lines.push('Contacted: ' + contacted.length);
-        }
-        respond(lines.join('\n'));
-      });
-    })
-    .catch(function(err) {
-      respond('Could not load overview: ' + err.message);
-    });
-}
-
 </script>
 </body>
 </html>
