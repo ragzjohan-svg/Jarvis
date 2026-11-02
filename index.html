@@ -967,7 +967,15 @@ function addHistory(q,a){
 function handleCommand(text){
   const t = text.toLowerCase().trim();
   setOrbState('thinking');
-  document.getElementById('responseBody').textContent = '…';
+  document.getElementById('responseBody').textContent = 'Thinking…';
+
+  // Helper: fetch with a 10s timeout so a hanging request never blocks everything
+  function fetchWithTimeout(action) {
+    return Promise.race([
+      callBackend(action),
+      new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, 10000); })
+    ]).catch(function(){ return null; });
+  }
 
   // Decide what data we need
   var needsLeads       = /lead|leed|leen|leeds|client|deal|today|this week|new lead|read me/.test(t);
@@ -976,9 +984,9 @@ function handleCommand(text){
   var needsOverview    = /overview|briefing|summary|how are we|what.s happening|how.s business/.test(t);
 
   var fetches = [
-    (needsLeads||needsOverview)       ? callBackend('getLeads').catch(()=>null)       : Promise.resolve(null),
-    (needsContractors||needsOverview) ? callBackend('getContractors').catch(()=>null) : Promise.resolve(null),
-    (needsFinancials||needsOverview)  ? callBackend('getSummary').catch(()=>null)     : Promise.resolve(null)
+    (needsLeads||needsOverview)       ? fetchWithTimeout('getLeads')       : Promise.resolve(null),
+    (needsContractors||needsOverview) ? fetchWithTimeout('getContractors') : Promise.resolve(null),
+    (needsFinancials||needsOverview)  ? fetchWithTimeout('getSummary')     : Promise.resolve(null)
   ];
 
   Promise.all(fetches).then(function(results){
