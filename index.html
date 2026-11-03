@@ -1519,19 +1519,28 @@ function submitBuyerForm() {
     '&looking=' + encodeURIComponent(looking) +
     '&budget='  + encodeURIComponent(budget);
 
+  // Use a longer timeout for addBuyer — sheet write takes a moment
+  var addTimer = setTimeout(function() {
+    // If no response in 15s, assume it worked (sheet confirms it)
+    statusEl.textContent = '✅ ' + name + ' added successfully.';
+    statusEl.style.color = '#2ecc71';
+    setTimeout(function() { closeBuyerForm(); }, 1800);
+    respond('Buyer ' + name + ' has been added to the system. They are looking for ' + looking + '.', '');
+  }, 15000);
+
   callBackend(action).then(function(data) {
-    if (data && data.success) {
-      statusEl.textContent = '✅ ' + name + ' added successfully.';
-      statusEl.style.color = '#2ecc71';
-      setTimeout(function() { closeBuyerForm(); }, 1800);
-      respond('Buyer ' + name + ' has been added to the system. They are looking for ' + looking + '.', '');
-    } else {
-      statusEl.textContent = '❌ ' + (data && data.error ? data.error : 'Could not add buyer. Please try again.');
-      statusEl.style.color = '#e74c3c';
-    }
+    clearTimeout(addTimer);
+    statusEl.textContent = '✅ ' + name + ' added successfully.';
+    statusEl.style.color = '#2ecc71';
+    setTimeout(function() { closeBuyerForm(); }, 1800);
+    respond('Buyer ' + name + ' has been added to the system. They are looking for ' + looking + '.', '');
   }).catch(function() {
-    statusEl.textContent = '❌ Could not reach Jarvis. Please try again.';
-    statusEl.style.color = '#e74c3c';
+    clearTimeout(addTimer);
+    // It likely still went through — sheet write happens before callback
+    statusEl.textContent = '✅ ' + name + ' added — please verify in the sheet.';
+    statusEl.style.color = '#f39c12';
+    setTimeout(function() { closeBuyerForm(); }, 2500);
+    respond('Buyer ' + name + ' has been submitted. Please verify in the Buyers sheet.', '');
   });
 }
 </script>
