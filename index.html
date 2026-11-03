@@ -1562,6 +1562,43 @@ function answerStockQuery(t, originalText, items, total) {
   return lines.join('\n');
 }
 
+// ── FALLBACK: plain-text answer from raw data when Gemini is unavailable ──────
+function buildFallbackAnswer(text, leadsData, ctData, finData, stockData) {
+  var t = text.toLowerCase();
+  // Leads
+  if (/lead|new lead|today|this week/.test(t) && leadsData && !leadsData.error) {
+    var leads = leadsData.leads || [];
+    var todayLeads = leads.filter(function(l){ return l.isToday; });
+    var st = {new:0,contacted:0,won:0,lost:0};
+    leads.forEach(function(l){ var s=(l.status||'new').toLowerCase(); if(st[s]!==undefined) st[s]++; });
+    var msg = 'You have ' + leadsData.total + ' leads in total — ' + st.new + ' new, ' + st.contacted + ' contacted, ' + st.won + ' won. ';
+    if (todayLeads.length) {
+      msg += todayLeads.length + ' lead' + (todayLeads.length>1?'s':'')+' came in today: ';
+      msg += todayLeads.slice(0,3).map(function(l){ return l.clientName + ' via ' + (l.icName||l.icCode); }).join(', ') + '.';
+    } else {
+      msg += 'No new leads today.';
+    }
+    return msg;
+  }
+  // Stock
+  if (/stock|intake|vehicle|machinery/.test(t) && stockData && !stockData.error) {
+    var items = stockData.items || [];
+    var pending = items.filter(function(i){ return i.status.toLowerCase()==='new'||i.status.toLowerCase()==='pending review'; });
+    return 'Stock intake has ' + stockData.total + ' items on file, with ' + pending.length + ' pending review.';
+  }
+  // Financials
+  if (/financial|income|expense|balance/.test(t) && finData && finData.summary) {
+    var s = finData.summary;
+    return 'Financials: income R' + s.income + ', expenses R' + s.expenses + ', closing balance R' + s.closingBalance + '.';
+  }
+  // Contractors
+  if (/contractor|agent/.test(t) && ctData && !ctData.error) {
+    var cts = ctData.contractors || [];
+    return 'You have ' + cts.length + ' active contractors. Top performer: ' + (cts[0] ? cts[0].name + ' with ' + cts[0].total + ' leads' : 'none on record') + '.';
+  }
+  return null;
+}
+
 // ── COMMAND ROUTER ────────────────────────────────────────────
 function isWebSearchQuery(t) {
   // Explicit web search requests always go to web
@@ -1730,12 +1767,21 @@ function handleCommand(text){
       'Reply as Jarvis. If Johan gives a short answer like yes/no/more, respond in context of the last thing discussed. '+
       'Answer only what was asked. Do not add follow-up questions or suggestions unless Johan asks for them.';
 
-    return askGemini(sys);
+    // Capture data in closure for fallback use
+    var capturedLeads = leadsData, capturedCt = ctData, capturedFin = finData, capturedStock = stockData;
+
+    return askGemini(sys).then(function(answer){
+      // If Gemini returns a quota/demand error message, build a fallback instead
+      if (/quota|high demand|no longer available|exceeded|rate.?limit/i.test(answer)) {
+        return buildFallbackAnswer(text, capturedLeads, capturedCt, capturedFin, capturedStock);
+      }
+      return answer;
+    });
 
   }).then(function(answer){
     respond(answer, text);
-  }).catch(function(err){
-    respond("I'm sorry, I couldn't fetch that data. "+err.message, text);
+  }).catch(function(){
+    respond('The AI assistant is under high demand right now, ' + jarvisUserTitle + '. Your business data is still accessible — try pressing the Leads, Stock or Financial buttons directly.', text);
   });
 }
 
