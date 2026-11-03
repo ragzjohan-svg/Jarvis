@@ -1594,10 +1594,15 @@ function handleCommand(text){
         if (data && data.answer) {
           // Show the web results panel with answer + source links
           showWebResults(text, data.answer, data.sourceUrls || []);
-          // Also speak a short version of the answer
           var spoken = data.answer.split('\n')[0].substring(0, 200);
-          respond('I found results for you, ' + jarvisUserTitle + '. Check the web results panel.', text);
+          setOrbState('idle');
+          document.getElementById('responseBody').textContent = 'Web results found. See panel below.';
+          if(conversationHistory) conversationHistory.push({role:'user',text:text});
           speak(spoken);
+        } else if (data) {
+          // Backend responded but no answer — still show panel with fallback
+          showWebResults(text, 'No detailed answer found. Try one of the links below.', []);
+          setOrbState('idle');
         } else {
           respond('I could not find a result on the web right now, ' + jarvisUserTitle + '. Try rephrasing or ask me something from the business data.', text);
         }
