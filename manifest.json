@@ -2,20 +2,20 @@
   "name": "Jarvis — IVA Assistant",
   "short_name": "JARVIS",
   "description": "IVA Business Assistant",
-  "start_url": "/Jarvis/jarvis-standalone.html",
+  "start_url": "/Jarvis/index.html",
   "display": "fullscreen",
   "orientation": "portrait",
   "background_color": "#020408",
   "theme_color": "#020408",
   "icons": [
     {
-      "src": "/Jarvis/jarvis-icon-192.png",
+      "src": "jarvis-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/Jarvis/jarvis-icon-512.png",
+      "src": "jarvis-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
