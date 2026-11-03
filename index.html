@@ -552,7 +552,10 @@ function askGemini(prompt) {
 
 function callBackend(action) {
   return new Promise(function(resolve, reject) {
-    var cbName = 'jarvisCb_' + action + '_' + Date.now();
+    // action may contain extra params e.g. "addBuyer&name=foo&phone=bar"
+    // extract just the action name for a valid JS callback identifier
+    var actionName = action.split('&')[0];
+    var cbName = 'jarvisCb_' + actionName + '_' + Date.now();
     var script = document.createElement('script');
     var timer = setTimeout(function() {
       delete window[cbName]; script.remove(); reject(new Error('timeout'));
