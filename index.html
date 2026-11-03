@@ -436,7 +436,7 @@ const COMMANDS = [
   { icon:'📅', text:'THIS WEEK',   sub:'Weekly',          cmd:'read me this week leads' },
   { icon:'👥', text:'CONTRACTORS', sub:'All agents',      cmd:'contractor performance' },
   { icon:'🔢', text:'ACTIVE',      sub:'This month',      cmd:'how many contractors this month' },
-  { icon:'🚛', text:'STOCK',       sub:'Intake review',   cmd:'give me the latest stock intake' },
+  { icon:'🚛', text:'STOCK',       sub:'Intake review',   cmd:'give me an overview of the stock intake' },
 ];
 
 function buildOrbital() {
@@ -1214,6 +1214,10 @@ function answerStockQuery(t, originalText, items, total) {
 
   // ── DETECT QUERY TYPE AND BUILD RESPONSE ──
 
+  // Overview / summary of all stock
+  var isOverview = /overview|summary|breakdown|how many.*total|overall|all stock|full stock/.test(t) &&
+                   !makeFilter && !catFilter && !provFilter && !dateFrom;
+
   // Latest / most recent item
   var isLatest = /last|latest|most recent|recently|just loaded|last.*updated|last.*added/.test(t) &&
                  !/last week|last month|last \d+ day/.test(t);
@@ -1223,6 +1227,31 @@ function answerStockQuery(t, originalText, items, total) {
 
   // List request
   var isList = /list|show|give me|what.*stock|tell me|all of/.test(t) || (!isLatest && !isCount);
+
+  // ── OVERVIEW ──
+  if (isOverview) {
+    var byStatus = {};
+    var byCategory = {};
+    items.forEach(function(i) {
+      var s = (i.status||'Unknown').toLowerCase();
+      byStatus[s] = (byStatus[s]||0) + 1;
+      var c = (i.category||'Unknown');
+      byCategory[c] = (byCategory[c]||0) + 1;
+    });
+    var statusLine = Object.keys(byStatus).map(function(s) {
+      return byStatus[s] + ' ' + s;
+    }).join(', ');
+    // top 5 categories
+    var topCats = Object.keys(byCategory).sort(function(a,b){ return byCategory[b]-byCategory[a]; }).slice(0,5);
+    var catLine = topCats.map(function(c){ return byCategory[c] + ' ' + c; }).join(', ');
+    var latest = items[0];
+    var overviewMsg = 'Stock intake overview: ' + total + ' items on file. ' +
+      'By status — ' + statusLine + '. ' +
+      'Top categories — ' + catLine + '. ' +
+      'Latest submission: ' + latest.year + ' ' + latest.make + ' ' + latest.model +
+      ' from ' + latest.seller + ' (' + latest.timestamp + ').';
+    return overviewMsg;
+  }
 
   // ── NO RESULTS ──
   if (filtered.length === 0) {
