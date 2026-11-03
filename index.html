@@ -329,6 +329,16 @@
   <button id="pinBtn" onclick="checkPin()">ENTER</button>
 </div>
 
+<!-- USER SELECTION -->
+<div id="userSelectOverlay" style="display:none; position:fixed; inset:0; z-index:998; background:radial-gradient(ellipse at center,#070c18 0%,#020408 100%); flex-direction:column; align-items:center; justify-content:center; gap:24px;">
+  <h2 style="font-family:'Orbitron',sans-serif; font-size:20px; letter-spacing:8px; color:var(--gold); text-shadow:0 0 30px rgba(212,175,55,0.5);">WHO AM I SPEAKING WITH?</h2>
+  <p style="color:var(--muted); font-size:11px; letter-spacing:4px;">/// SELECT YOUR PROFILE</p>
+  <div style="display:flex; gap:20px; margin-top:8px;">
+    <button onclick="setUser('johan')" style="font-family:'Orbitron',sans-serif; font-size:13px; letter-spacing:3px; padding:16px 32px; background:rgba(212,175,55,0.08); border:1px solid var(--gold); color:var(--gold); border-radius:4px; cursor:pointer;">JOHAN</button>
+    <button onclick="setUser('luanne')" style="font-family:'Orbitron',sans-serif; font-size:13px; letter-spacing:3px; padding:16px 32px; background:rgba(212,175,55,0.08); border:1px solid var(--gold); color:var(--gold); border-radius:4px; cursor:pointer;">LUANNE</button>
+  </div>
+</div>
+
 <header>
   <div>
     <div class="h-title">JARVIS</div>
@@ -514,13 +524,36 @@ window.addEventListener('resize', buildOrbital);
 
 // ── PIN LOCK ─────────────────────────────────────────────────
 const JARVIS_PIN = '1977';
+
+// Active user: 'johan' or 'luanne'
+var jarvisUser = 'johan';
+var jarvisUserName = 'Johan';
+var jarvisUserTitle = 'sir';
+var jarvisUserEmail = 'johan@brisksure.co.za';
+
+function setUser(user) {
+  jarvisUser = user;
+  if (user === 'luanne') {
+    jarvisUserName  = 'Luanne';
+    jarvisUserTitle = 'ma\'am';
+    jarvisUserEmail = 'jansevanrensburg.luanne@gmail.com';
+  } else {
+    jarvisUserName  = 'Johan';
+    jarvisUserTitle = 'sir';
+    jarvisUserEmail = 'johan@brisksure.co.za';
+  }
+  document.getElementById('userSelectOverlay').style.display = 'none';
+  var tod = getTimeOfDay();
+  var greeting = 'Good ' + tod + ', ' + jarvisUserTitle + '. Ready to get started when you are — where do we start in this session?';
+  document.getElementById('responseBody').textContent = greeting;
+  speak(greeting);
+}
+
 function checkPin() {
   const val = document.getElementById('pinInput').value.trim();
   if (val === JARVIS_PIN) {
     document.getElementById('pinOverlay').style.display = 'none';
-    const greeting = "Good " + getTimeOfDay() + ". I'm Jarvis, your I.V.A. business assistant. Tap the globe and start talking.";
-    document.getElementById('responseBody').textContent = greeting;
-    speak(greeting);
+    document.getElementById('userSelectOverlay').style.display = 'flex';
   } else {
     document.getElementById('pinError').textContent = 'Incorrect PIN. Try again.';
     document.getElementById('pinInput').value = '';
@@ -1012,9 +1045,9 @@ var KNOWN_RECIPIENTS = {
   'anne': 'jansevanrensburg.luanne@gmail.com',
   'ann': 'jansevanrensburg.luanne@gmail.com',
   'johan': 'johan@brisksure.co.za',
-  'me': 'johan@brisksure.co.za',
-  'myself': 'johan@brisksure.co.za',
-  'my email': 'johan@brisksure.co.za',
+  'me': '__CURRENT_USER__',
+  'myself': '__CURRENT_USER__',
+  'my email': '__CURRENT_USER__',
   'yahoo': 'johan.huysamen@yahoo.com',
   'brisksure': 'johan@brisksure.co.za'
 };
@@ -1029,7 +1062,10 @@ function resolveRecipient(text) {
   // Check known names — longest match first to avoid "johan" matching "johan.huysamen"
   var keys = Object.keys(KNOWN_RECIPIENTS).sort(function(a,b){ return b.length - a.length; });
   for (var i = 0; i < keys.length; i++) {
-    if (t.indexOf(keys[i]) > -1) return KNOWN_RECIPIENTS[keys[i]];
+    if (t.indexOf(keys[i]) > -1) {
+      var r = KNOWN_RECIPIENTS[keys[i]];
+      return r === '__CURRENT_USER__' ? jarvisUserEmail : r;
+    }
   }
 
   // Check contractor directory for names (e.g. "send to Francois")
@@ -1043,7 +1079,7 @@ function resolveRecipient(text) {
     }
   }
 
-  return 'johan@brisksure.co.za'; // default
+  return jarvisUserEmail; // default — current user
 }
 
 function resolveEmailSubject(text) {
@@ -1068,12 +1104,13 @@ function sendJarvisEmail(recipient, subject, confirmMsg, originalText, asPdf) {
   callBackend(action)
     .then(function(data) {
       // Email sent successfully regardless of callback shape
-      var recipientName = recipient === 'johan@brisksure.co.za' ? 'you, sir' :
-                          recipient === 'jansevanrensburg.luanne@gmail.com' ? 'Luanne' : recipient;
+      var recipientName = recipient === jarvisUserEmail ? ('you, ' + jarvisUserTitle) :
+                          recipient === 'jansevanrensburg.luanne@gmail.com' ? 'Luanne' :
+                          recipient === 'johan@brisksure.co.za' ? 'Johan' : recipient;
       respond('Done. The ' + subject.toLowerCase() + ' has been sent to ' + recipientName + '.', '');
     }).catch(function() {
       // Even on callback error the email likely sent — confirm anyway
-      respond('The email has been sent, sir.', '');
+      respond('The email has been sent, ' + jarvisUserTitle + '.', '');
     });
 }
 
@@ -1268,9 +1305,9 @@ function answerStockQuery(t, originalText, items, total) {
     noMsg += ' items on the stock intake';
     if (dateFrom) noMsg += ' for that period';
     if (provFilter) noMsg += ' from ' + provFilter;
-    noMsg += ', sir.';
+    noMsg += ', ' + jarvisUserTitle + '.';
     if (!makeFilter && !catFilter) {
-      noMsg = 'The stock intake is empty, sir. No items found.';
+      noMsg = 'The stock intake is empty, ' + jarvisUserTitle + '. No items found.';
     }
     return noMsg;
   }
@@ -1299,7 +1336,7 @@ function answerStockQuery(t, originalText, items, total) {
     if (catFilter) countMsg += ' in the ' + catFilter + ' category';
     if (provFilter) countMsg += ' from ' + provFilter;
     if (dateFrom) countMsg += ' for that period';
-    countMsg += ' on the stock intake, sir.';
+    countMsg += ' on the stock intake, ' + jarvisUserTitle + '.';
     return countMsg;
   }
 
@@ -1340,14 +1377,14 @@ function handleCommand(text){
   if (isStockQuery) {
     callBackend('getStock').then(function(data) {
       if (!data || data.error || !data.items || !data.items.length) {
-        respond('I could not retrieve the stock intake right now, sir. Please try again.', text);
+        respond('I could not retrieve the stock intake right now, ' + jarvisUserTitle + '. Please try again.', text);
         return;
       }
       var items = data.items; // newest first (reversed in Code.gs)
       var msg = answerStockQuery(t, text, items, data.total);
       respond(msg, text);
     }).catch(function() {
-      respond('I could not reach the stock intake system right now, sir.', text);
+      respond('I could not reach the stock intake system right now, ' + jarvisUserTitle + '.', text);
     });
     return;
   }
@@ -1357,8 +1394,9 @@ function handleCommand(text){
   if (isEmailCmd) {
     var recipient = resolveRecipient(text);
     var subject   = resolveEmailSubject(text);
-    var recipientName = recipient === 'johan@brisksure.co.za' ? 'you, sir' :
-                        recipient === 'jansevanrensburg.luanne@gmail.com' ? 'Luanne' : recipient;
+    var recipientName = recipient === jarvisUserEmail ? ('you, ' + jarvisUserTitle) :
+                        recipient === 'jansevanrensburg.luanne@gmail.com' ? 'Luanne' :
+                        recipient === 'johan@brisksure.co.za' ? 'Johan' : recipient;
     var asPdf = /pdf|document|attach/.test(t);
     var confirmMsg = 'Sending the ' + subject.toLowerCase() + ' to ' + recipientName +
                      (asPdf ? ' as a PDF' : '') + ' now.';
