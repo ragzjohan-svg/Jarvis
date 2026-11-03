@@ -438,6 +438,7 @@ const COMMANDS = [
   { icon:'🔢', text:'ACTIVE',      sub:'This month',      cmd:'how many contractors this month' },
   { icon:'🚛', text:'STOCK',       sub:'Intake review',   cmd:'give me an overview of the stock intake' },
   { icon:'👤', text:'BUYER',       sub:'Add buyer',        cmd:'__ADD_BUYER__' },
+  { icon:'📢', text:'ADS',         sub:'Stock ads',        cmd:'__VIEW_ADS__' },
 ];
 
 function buildOrbital() {
@@ -500,7 +501,9 @@ function buildOrbital() {
     btn.style.top  = by + 'px';
     btn.style.zIndex = '5';
     btn.innerHTML = `<span class="ob-icon">${cmd.icon}</span><span class="ob-text">${cmd.text}</span><span class="ob-sub">${cmd.sub}</span>`;
-    btn.onclick = () => cmd.cmd === '__ADD_BUYER__' ? openBuyerForm() : handleCommand(cmd.cmd);
+    btn.onclick = () => cmd.cmd === '__ADD_BUYER__' ? openBuyerForm() :
+                        cmd.cmd === '__VIEW_ADS__'  ? openAdsPanel()  :
+                        handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
   });
 }
@@ -1489,6 +1492,71 @@ window.addEventListener('load', function() {
 
 // All queries now route through handleCommand → Gemini
 
+// ── ADS PANEL ─────────────────────────────────────────────────
+function openAdsPanel() {
+  var panel = document.getElementById('adsPanelOverlay');
+  var content = document.getElementById('adsPanelContent');
+  content.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">Loading ads…</p>';
+  panel.style.display = 'flex';
+
+  callBackend('getPendingAds').then(function(data) {
+    if (!data || !data.ads || !data.ads.length) {
+      content.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">No ads available yet. Ads are written automatically when new stock comes in.</p>';
+      return;
+    }
+    var html = '';
+    data.ads.forEach(function(a, i) {
+      var adId = 'ad-text-' + i;
+      html += '<div style="margin-bottom:24px;border:1px solid #00d4ff33;border-radius:10px;overflow:hidden;">';
+      html += '<div style="background:#00d4ff22;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">';
+      html += '<span style="color:#00d4ff;font-weight:700;font-size:0.85rem;">' + a.title + '</span>';
+      html += '<button onclick="copyAd(\'' + adId + '\')" style="background:#00d4ff;border:none;border-radius:6px;padding:5px 12px;color:#000;font-weight:700;font-size:0.75rem;cursor:pointer;">COPY</button>';
+      html += '</div>';
+      html += '<textarea id="' + adId + '" readonly style="width:100%;min-height:280px;background:#0d0d1a;color:#eee;border:none;padding:12px 14px;font-size:0.78rem;line-height:1.6;resize:vertical;font-family:monospace;box-sizing:border-box;">' + a.ad + '</textarea>';
+      html += '</div>';
+    });
+    content.innerHTML = html;
+  }).catch(function() {
+    content.innerHTML = '<p style="color:#e74c3c;text-align:center;padding:20px;">Could not load ads. Please try again.</p>';
+  });
+}
+
+function closeAdsPanel() {
+  document.getElementById('adsPanelOverlay').style.display = 'none';
+}
+
+function copyAd(adId) {
+  var ta = document.getElementById(adId);
+  if (!ta) return;
+  ta.select();
+  try {
+    navigator.clipboard.writeText(ta.value).then(function() {
+      showCopied(adId);
+    }).catch(function() { document.execCommand('copy'); showCopied(adId); });
+  } catch(e) { document.execCommand('copy'); showCopied(adId); }
+}
+
+function showCopied(adId) {
+  var btn = document.querySelector('[onclick="copyAd(\'' + adId + '\')"]');
+  if (btn) { btn.textContent = '✅ COPIED'; setTimeout(function(){ btn.textContent = 'COPY'; }, 2000); }
+}
+
+// Check for new ads alert on load and every 3 min
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    callBackend('getPendingAds').then(function(data) {
+      if (data && data.ads && data.ads.length) {
+        var msg = 'Luanne, your ad' + (data.ads.length > 1 ? 's are' : ' is') +
+                  ' ready for ' + data.ads.length + ' new stock item' +
+                  (data.ads.length > 1 ? 's' : '') +
+                  ' that came in. Tap the Ads button to copy and paste.';
+        document.getElementById('responseBody').textContent = '📢 ' + msg;
+        speak(msg);
+      }
+    }).catch(function(){});
+  }, 8000);
+});
+
 // ── BUYER FORM ────────────────────────────────────────────────
 function openBuyerForm() {
   document.getElementById('buyerFormOverlay').style.display = 'flex';
@@ -1544,6 +1612,17 @@ function submitBuyerForm() {
   });
 }
 </script>
+
+<!-- ── ADS PANEL OVERLAY ── -->
+<div id="adsPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0;">
+  <div style="background:#1a1a2e;border:1px solid #00d4ff44;border-radius:16px;padding:24px;width:94%;max-width:480px;margin:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <span style="color:#00d4ff;font-size:1.1rem;font-weight:700;letter-spacing:1px;">📢 STOCK ADS</span>
+      <button onclick="closeAdsPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div id="adsPanelContent"></div>
+  </div>
+</div>
 
 <!-- ── BUYER FORM OVERLAY ── -->
 <div id="buyerFormOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;">
