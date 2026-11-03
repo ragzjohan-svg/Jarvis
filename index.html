@@ -436,6 +436,7 @@ const COMMANDS = [
   { icon:'📅', text:'THIS WEEK',   sub:'Weekly',          cmd:'read me this week leads' },
   { icon:'👥', text:'CONTRACTORS', sub:'All agents',      cmd:'contractor performance' },
   { icon:'🔢', text:'ACTIVE',      sub:'This month',      cmd:'how many contractors this month' },
+  { icon:'🚛', text:'STOCK',       sub:'Intake review',   cmd:'give me the latest stock intake' },
 ];
 
 function buildOrbital() {
@@ -1044,6 +1045,7 @@ function resolveEmailSubject(text) {
   if (/lead/.test(t)) return 'Leads report';
   if (/contractor|agent/.test(t)) return 'Contractor stats';
   if (/financial|finance|income|expense|balance/.test(t)) return 'Financial summary';
+  if (/stock|intake|vehicle|machinery|product|listing/.test(t)) return 'Stock intake report';
   // Extract subject after "email" keyword
   var match = text.match(/email.*?(?:me|luanne|johan)?\s+(?:the\s+)?(.+)/i);
   if (match) return match[1].trim();
@@ -1102,15 +1104,17 @@ function handleCommand(text){
   var needsContractors = /contractor|agent|ic.?code|iva\d|who submitted|performance|how many/.test(t);
   var needsFinancials  = /financial|finance|money|income|expense|bank|balance|spend/.test(t);
   var needsOverview    = /overview|briefing|summary|how are we|what.s happening|how.s business/.test(t);
+  var needsStock       = /stock|intake|vehicle|machinery|item|product|loaded|listing|listings/.test(t);
 
   var fetches = [
     (needsLeads||needsOverview)       ? (jarvisCachedLeads ? Promise.resolve(jarvisCachedLeads) : fetchWithTimeout('getLeads', 8000))             : Promise.resolve(null),
     (needsContractors||needsOverview) ? (jarvisCachedContractors ? Promise.resolve(jarvisCachedContractors) : fetchWithTimeout('getContractors', 8000)) : Promise.resolve(null),
-    (needsFinancials||needsOverview)  ? fetchWithTimeout('getSummary', 5000)     : Promise.resolve(null)
+    (needsFinancials||needsOverview)  ? fetchWithTimeout('getSummary', 5000)     : Promise.resolve(null),
+    (needsStock||needsOverview)       ? fetchWithTimeout('getStock', 8000)        : Promise.resolve(null)
   ];
 
   Promise.all(fetches).then(function(results){
-    var leadsData=results[0], ctData=results[1], finData=results[2];
+    var leadsData=results[0], ctData=results[1], finData=results[2], stockData=results[3];
 
     // ── SYSTEM PROMPT — tight and clear ──
     var sys =
@@ -1144,6 +1148,15 @@ function handleCommand(text){
       var s=finData.summary;
       sys += 'FINANCIALS: income=R'+s.income+' expenses=R'+s.expenses+' balance=R'+s.closingBalance+'\n\n';
     }
+    if(stockData && !stockData.error && stockData.items){
+      var items = stockData.items||[];
+      var newItems = items.filter(function(i){ return i.status.toLowerCase()==='new'||i.status.toLowerCase()==='pending review'; });
+      sys += 'STOCK INTAKE: total='+stockData.total+' pending_review='+newItems.length+'\n';
+      sys += 'ITEMS (newest first — seller | make | model | category | status | date):\n';
+      sys += items.map(function(i){
+        return '- '+i.seller+' | '+i.year+' '+i.make+' '+i.model+' | '+i.category+' | '+i.status+' | '+i.timestamp;
+      }).join('\n')+'\n\n';
+    }
 
     // ── CONVERSATION HISTORY — last 8 exchanges ──
     if(conversationHistory.length>0){
@@ -1152,8 +1165,8 @@ function handleCommand(text){
     }
 
     // ── DATA AVAILABILITY NOTE ──
-    var hasData = (leadsData&&!leadsData.error) || (ctData&&!ctData.error) || (finData&&finData.summary);
-    if(!hasData && (needsLeads||needsContractors||needsFinancials||needsOverview)){
+    var hasData = (leadsData&&!leadsData.error) || (ctData&&!ctData.error) || (finData&&finData.summary) || (stockData&&!stockData.error);
+    if(!hasData && (needsLeads||needsContractors||needsFinancials||needsOverview||needsStock)){
       sys += 'NOTE: Live business data could not be loaded right now. Acknowledge this briefly and ask Johan to try again.\n\n';
     }
 
