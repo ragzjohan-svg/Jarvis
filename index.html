@@ -1378,11 +1378,17 @@ function answerStockQuery(t, originalText, items, total) {
 
 // ── COMMAND ROUTER ────────────────────────────────────────────
 function isWebSearchQuery(t) {
-  // Triggers that suggest a live web lookup is needed
-  var webTriggers = /search.*web|search online|look.*up online|google|what.*price|current price|market price|news|latest.*news|weather|exchange rate|rand.*dollar|usd|eur|today.*rate|diesel price|petrol price|fuel price|interest rate|repo rate|what is happening|what happened|who is|when did|how much does.*cost/.test(t);
-  // Business data stays on sheets — never route these to web
-  var businessData = /stock|intake|lead|buyer|contractor|financial|income|expense|debit|commission/.test(t);
-  return webTriggers && !businessData;
+  // Explicit web search requests always go to web
+  var explicitWeb = /search.*web|search online|look.*up online|google|search for/.test(t);
+  if (explicitWeb) return true;
+
+  // Questions clearly about OWN IVA data — keep on sheets
+  var ownData = /our stock|our leads|our buyers|our contractors|our financials|iva stock|iva lead|stock intake|how many lead|how many stock|our income|our expense|our debit/.test(t);
+  if (ownData) return false;
+
+  // Everything else that sounds like a market/world question goes to web
+  var worldQuestion = /price|rate|news|weather|exchange|rand|dollar|euro|pound|fuel|diesel|petrol|repo|inflation|interest|market|value|worth|cost|what is|who is|when did|what happened|how much|current|today|latest|2024|2025|2026/.test(t);
+  return worldQuestion;
 }
 
 function handleCommand(text){
