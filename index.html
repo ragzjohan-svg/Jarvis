@@ -1377,10 +1377,42 @@ function answerStockQuery(t, originalText, items, total) {
 }
 
 // ── COMMAND ROUTER ────────────────────────────────────────────
+function isWebSearchQuery(t) {
+  // Triggers that suggest a live web lookup is needed
+  var webTriggers = /search.*web|search online|look.*up online|google|what.*price|current price|market price|news|latest.*news|weather|exchange rate|rand.*dollar|usd|eur|today.*rate|diesel price|petrol price|fuel price|interest rate|repo rate|what is happening|what happened|who is|when did|how much does.*cost/.test(t);
+  // Business data stays on sheets — never route these to web
+  var businessData = /stock|intake|lead|buyer|contractor|financial|income|expense|debit|commission/.test(t);
+  return webTriggers && !businessData;
+}
+
 function handleCommand(text){
   const t = text.toLowerCase().trim();
   setOrbState('thinking');
   document.getElementById('responseBody').textContent = 'Thinking…';
+
+  // ── LIVE WEB SEARCH — routes to Gemini with Google Search grounding ──────
+  if (isWebSearchQuery(t)) {
+    document.getElementById('responseBody').textContent = 'Searching the web…';
+    var searchPrompt = 'You are Jarvis, a professional business assistant for IVA, a South African heavy vehicle and machinery brokerage. ' +
+      'Answer the following question using live web search results. Be concise and factual. ' +
+      'If prices are in USD or EUR also give the ZAR equivalent using current rates. ' +
+      'Mention the source briefly at the end. Question: ' + text;
+    callBackend('askGeminiSearch&prompt=' + encodeURIComponent(searchPrompt))
+      .then(function(data) {
+        if (data && data.answer) {
+          var reply = data.answer;
+          if (data.sources && data.sources.length) {
+            reply += '\n\n📡 Source: ' + data.sources.slice(0,2).join(', ');
+          }
+          respond(reply, text);
+        } else {
+          respond('I could not find a result on the web right now, ' + jarvisUserTitle + '. Try rephrasing or ask me something from the business data.', text);
+        }
+      }).catch(function() {
+        respond('Web search is unavailable right now, ' + jarvisUserTitle + '.', text);
+      });
+    return;
+  }
 
   // ── STOCK QUERY ENGINE — all stock questions answered directly from sheet ──
   var isStockQuery = /stock|intake|vehicle|machinery|listing|listings/.test(t) ||
