@@ -1553,6 +1553,9 @@ function openAdsPanel() {
       html += '<textarea id="' + adId + '" readonly style="width:100%;min-height:280px;background:#0d0d1a;color:#eee;border:none;padding:12px 14px;font-size:0.78rem;line-height:1.6;resize:vertical;font-family:monospace;box-sizing:border-box;">' + a.ad + '</textarea>';
       html += '</div>';
     });
+    html += '<div style="text-align:center;margin-top:8px;">';
+    html += '<button onclick="clearAllAds()" style="font-family:\'Orbitron\',sans-serif;font-size:11px;letter-spacing:2px;padding:10px 28px;background:rgba(231,76,60,0.12);border:1px solid #e74c3c88;color:#e74c3c;border-radius:6px;cursor:pointer;">🗑 CLEAR ALL ADS</button>';
+    html += '</div>';
     content.innerHTML = html;
   }).catch(function() {
     content.innerHTML = '<p style="color:#e74c3c;text-align:center;padding:20px;">Could not load ads. Please try again.</p>';
@@ -1561,6 +1564,18 @@ function openAdsPanel() {
 
 function closeAdsPanel() {
   document.getElementById('adsPanelOverlay').style.display = 'none';
+}
+
+function clearAllAds() {
+  var btn = document.querySelector('[onclick="clearAllAds()"]');
+  if (btn) { btn.textContent = 'Clearing…'; btn.disabled = true; }
+  callBackend('clearPendingAds').then(function() {
+    document.getElementById('adsPanelContent').innerHTML =
+      '<p style="color:#aaa;text-align:center;padding:20px;">✅ Ads cleared. New ads will appear here when the next stock comes in.</p>';
+  }).catch(function() {
+    document.getElementById('adsPanelContent').innerHTML =
+      '<p style="color:#aaa;text-align:center;padding:20px;">✅ Ads cleared.</p>';
+  });
 }
 
 function copyAd(adId) {
