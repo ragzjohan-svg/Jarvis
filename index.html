@@ -1076,6 +1076,26 @@ function handleCommand(text){
   setOrbState('thinking');
   document.getElementById('responseBody').textContent = 'Thinking…';
 
+  // ── LATEST STOCK ITEM — direct answer, no Gemini needed ──
+  var isLatestStock = /last|latest|most recent|new.*stock|stock.*new|just.*loaded|recently.*loaded|last.*loaded|last.*upload|latest.*upload|last.*intake|latest.*intake/.test(t) &&
+                      /stock|product|item|vehicle|intake/.test(t);
+  if (isLatestStock) {
+    callBackend('getStock').then(function(data) {
+      if (!data || data.error || !data.items || !data.items.length) {
+        respond('I could not retrieve the stock intake right now, sir. Please try again.', text);
+        return;
+      }
+      var i = data.items[0]; // already sorted newest first
+      var msg = 'The latest item on the stock intake is a ' + i.year + ' ' + i.make + ' ' + i.model +
+                ', submitted by ' + i.seller + ' from ' + i.province + '. Status is ' + i.status +
+                ', submitted on ' + i.timestamp + '.';
+      respond(msg, text);
+    }).catch(function() {
+      respond('I could not reach the stock intake system right now, sir.', text);
+    });
+    return;
+  }
+
   // ── EMAIL COMMAND DETECTION ──
   var isEmailCmd = /email|send.*report|mail.*me|send.*overview|send.*leads|send.*contractor|send.*financial/.test(t);
   if (isEmailCmd) {
