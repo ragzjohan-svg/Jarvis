@@ -1070,25 +1070,245 @@ function sendJarvisEmail(recipient, subject, confirmMsg, originalText, asPdf) {
     });
 }
 
+// ── STOCK QUERY ENGINE ────────────────────────────────────────
+function answerStockQuery(t, originalText, items, total) {
+
+  // ── DATE HELPERS ──
+  function parseDateFromStamp(stamp) {
+    // stamp format: "dd MMM yyyy HH:mm" e.g. "06 Jul 2026 13:49"
+    // or raw text "7/6/2026 13:49:37"
+    if (!stamp) return null;
+    var d = new Date(stamp);
+    if (!isNaN(d.getTime())) return d;
+    // try slash format m/d/yyyy
+    var m = stamp.match(/(\d+)\/(\d+)\/(\d+)/);
+    if (m) return new Date(parseInt(m[3]), parseInt(m[1])-1, parseInt(m[2]));
+    return null;
+  }
+
+  var now = new Date();
+
+  // ── EXTRACT FILTER KEYWORDS ──
+  // Make/brand filter
+  var makeFilter = null;
+  var makes = ['scania','volvo','mercedes','benz','man ','daf','isuzu','toyota','hino','renault',
+                'ford','iveco','freightliner','kenworth','peterbilt','mack','faw','sinotruk',
+                'shacman','xcmg','jcb','caterpillar','cat ','komatsu','liebherr','case','john deere',
+                'bell','terex','grove','tadano','manitowoc','hyster','toyota forklift','linde',
+                'samsung','bobcat','new holland','massey','deere'];
+  for (var mi = 0; mi < makes.length; mi++) {
+    if (t.indexOf(makes[mi]) !== -1) { makeFilter = makes[mi].trim(); break; }
+  }
+  // also catch any word before "truck|trailer|crane|excavator|forklift|grader|dozer|loader|tipper"
+  if (!makeFilter) {
+    var makeMatch = t.match(/(\w+)\s+(?:truck|trucks|trailer|trailers|crane|cranes|excavator|excavators|forklift|forklifts|grader|graders|dozer|dozers|loader|loaders|tipper|tippers|horse|horses)/);
+    if (makeMatch && !/any|all|our|the|how|many|do|we|have/.test(makeMatch[1])) {
+      makeFilter = makeMatch[1];
+    }
+  }
+
+  // Category filter
+  var catFilter = null;
+  var catMap = {
+    'truck tractor': ['truck tractor','horse','semi','18 wheel'],
+    'tipper': ['tipper','tipper truck','dumper','dump truck'],
+    'flatbed': ['flatbed','flat bed','flat deck'],
+    'trailer': ['trailer','triaxle','tri-axle','tri axle','side tipper','side-tipper'],
+    'crane': ['crane','cranes','lifting'],
+    'excavator': ['excavator','digger'],
+    'grader': ['grader','road grader','motor grader'],
+    'bulldozer': ['bulldozer','dozer','blade'],
+    'loader': ['front loader','wheel loader','loader'],
+    'forklift': ['forklift','fork lift'],
+    'compactor': ['compactor','roller'],
+    'generator': ['generator','genset'],
+    'bus': ['bus','buses','coach'],
+    'rigid truck': ['rigid','rigid truck','freight']
+  };
+  for (var cat in catMap) {
+    var synonyms = catMap[cat];
+    for (var si = 0; si < synonyms.length; si++) {
+      if (t.indexOf(synonyms[si]) !== -1) { catFilter = cat; break; }
+    }
+    if (catFilter) break;
+  }
+
+  // Province filter
+  var provFilter = null;
+  var provs = ['western cape','eastern cape','northern cape','north west','kwazulu-natal','kwazulu natal',
+                'kzn','gauteng','limpopo','mpumalanga','free state'];
+  for (var pi = 0; pi < provs.length; pi++) {
+    if (t.indexOf(provs[pi]) !== -1) { provFilter = provs[pi]; break; }
+  }
+
+  // Status filter
+  var statusFilter = null;
+  if (/pending|pending review/.test(t)) statusFilter = 'pending review';
+  else if (/\bnew\b/.test(t) && /status|only|just/.test(t)) statusFilter = 'new';
+  else if (/approved|active/.test(t)) statusFilter = 'approved';
+  else if (/sold/.test(t)) statusFilter = 'sold';
+
+  // Date range filter
+  var dateFrom = null, dateTo = null;
+  var today = new Date(); today.setHours(0,0,0,0);
+  if (/today/.test(t)) {
+    dateFrom = new Date(today); dateTo = new Date();
+  } else if (/yesterday/.test(t)) {
+    dateFrom = new Date(today); dateFrom.setDate(dateFrom.getDate()-1);
+    dateTo = new Date(today);
+  } else if (/this week/.test(t)) {
+    dateFrom = new Date(today); dateFrom.setDate(dateFrom.getDate() - dateFrom.getDay());
+    dateTo = new Date();
+  } else if (/last week/.test(t)) {
+    var lw = new Date(today); lw.setDate(lw.getDate() - lw.getDay() - 7);
+    dateFrom = lw;
+    dateTo = new Date(lw); dateTo.setDate(dateTo.getDate()+7);
+  } else if (/this month/.test(t)) {
+    dateFrom = new Date(today.getFullYear(), today.getMonth(), 1);
+    dateTo = new Date();
+  } else if (/last month/.test(t)) {
+    dateFrom = new Date(today.getFullYear(), today.getMonth()-1, 1);
+    dateTo = new Date(today.getFullYear(), today.getMonth(), 1);
+  } else if (/this year/.test(t)) {
+    dateFrom = new Date(today.getFullYear(), 0, 1);
+    dateTo = new Date();
+  }
+  // "last X days"
+  var daysMatch = t.match(/last\s+(\d+)\s+days?/);
+  if (daysMatch) {
+    dateFrom = new Date(today); dateFrom.setDate(dateFrom.getDate() - parseInt(daysMatch[1]));
+    dateTo = new Date();
+  }
+
+  // ── APPLY FILTERS ──
+  var filtered = items.slice();
+
+  if (makeFilter) {
+    filtered = filtered.filter(function(i) {
+      return (i.make||'').toLowerCase().indexOf(makeFilter) !== -1 ||
+             (i.model||'').toLowerCase().indexOf(makeFilter) !== -1;
+    });
+  }
+  if (catFilter) {
+    filtered = filtered.filter(function(i) {
+      return (i.category||'').toLowerCase().indexOf(catFilter) !== -1;
+    });
+  }
+  if (provFilter) {
+    filtered = filtered.filter(function(i) {
+      return (i.province||'').toLowerCase().indexOf(provFilter) !== -1;
+    });
+  }
+  if (statusFilter) {
+    filtered = filtered.filter(function(i) {
+      return (i.status||'').toLowerCase() === statusFilter;
+    });
+  }
+  if (dateFrom) {
+    filtered = filtered.filter(function(i) {
+      var d = parseDateFromStamp(i.timestamp);
+      if (!d) return false;
+      return d >= dateFrom && (!dateTo || d <= dateTo);
+    });
+  }
+
+  // ── DETECT QUERY TYPE AND BUILD RESPONSE ──
+
+  // Latest / most recent item
+  var isLatest = /last|latest|most recent|recently|just loaded|last.*updated|last.*added/.test(t) &&
+                 !/last week|last month|last \d+ day/.test(t);
+
+  // Count only
+  var isCount = /how many|count|total|number of/.test(t) && !/list|show|give me|what/.test(t);
+
+  // List request
+  var isList = /list|show|give me|what.*stock|tell me|all of/.test(t) || (!isLatest && !isCount);
+
+  // ── NO RESULTS ──
+  if (filtered.length === 0) {
+    var noMsg = 'There are no';
+    if (makeFilter) noMsg += ' ' + makeFilter.charAt(0).toUpperCase() + makeFilter.slice(1);
+    if (catFilter) noMsg += ' ' + catFilter;
+    noMsg += ' items on the stock intake';
+    if (dateFrom) noMsg += ' for that period';
+    if (provFilter) noMsg += ' from ' + provFilter;
+    noMsg += ', sir.';
+    if (!makeFilter && !catFilter) {
+      noMsg = 'The stock intake is empty, sir. No items found.';
+    }
+    return noMsg;
+  }
+
+  // ── LATEST ITEM ──
+  if (isLatest && !makeFilter && !catFilter && !provFilter && !statusFilter && !dateFrom) {
+    var i = filtered[0];
+    return 'The latest item on the stock intake is a ' + i.year + ' ' + i.make + ' ' + i.model +
+           ', submitted by ' + i.seller + ' from ' + i.province +
+           '. Status is ' + i.status + ', submitted on ' + i.timestamp + '.';
+  }
+
+  // ── LATEST FILTERED ──
+  if (isLatest && filtered.length > 0) {
+    var i = filtered[0];
+    return 'The latest matching item is a ' + i.year + ' ' + i.make + ' ' + i.model +
+           ', submitted by ' + i.seller + ' from ' + i.province +
+           '. Status is ' + i.status + ', on ' + i.timestamp + '.';
+  }
+
+  // ── COUNT ──
+  if (isCount) {
+    var countMsg = 'There ';
+    countMsg += filtered.length === 1 ? 'is 1 item' : 'are ' + filtered.length + ' items';
+    if (makeFilter) countMsg += ' matching ' + makeFilter.charAt(0).toUpperCase() + makeFilter.slice(1);
+    if (catFilter) countMsg += ' in the ' + catFilter + ' category';
+    if (provFilter) countMsg += ' from ' + provFilter;
+    if (dateFrom) countMsg += ' for that period';
+    countMsg += ' on the stock intake, sir.';
+    return countMsg;
+  }
+
+  // ── LIST (up to 8 items, then summarise rest) ──
+  var MAX_LIST = 8;
+  var shown = filtered.slice(0, MAX_LIST);
+  var lines = [];
+
+  // Header
+  var header = filtered.length + ' item' + (filtered.length !== 1 ? 's' : '');
+  if (makeFilter) header += ' — ' + makeFilter.charAt(0).toUpperCase() + makeFilter.slice(1);
+  if (catFilter) header += ' — ' + catFilter;
+  if (provFilter) header += ' — ' + provFilter;
+  if (dateFrom) header += ' — period filter applied';
+  lines.push(header + ':');
+
+  shown.forEach(function(i, idx) {
+    lines.push((idx+1) + '. ' + i.year + ' ' + i.make + ' ' + i.model +
+               ' — ' + i.seller + ' (' + i.province + ') — ' + i.status);
+  });
+
+  if (filtered.length > MAX_LIST) {
+    lines.push('...and ' + (filtered.length - MAX_LIST) + ' more. Ask me to email you the full list.');
+  }
+
+  return lines.join('\n');
+}
+
 // ── COMMAND ROUTER ────────────────────────────────────────────
 function handleCommand(text){
   const t = text.toLowerCase().trim();
   setOrbState('thinking');
   document.getElementById('responseBody').textContent = 'Thinking…';
 
-  // ── LATEST STOCK ITEM — direct answer, no Gemini needed ──
-  var isLatestStock = /last|latest|most recent|new.*stock|stock.*new|just.*loaded|recently.*loaded|last.*loaded|last.*upload|latest.*upload|last.*intake|latest.*intake/.test(t) &&
-                      /stock|product|item|vehicle|intake/.test(t);
-  if (isLatestStock) {
+  // ── STOCK QUERY ENGINE — all stock questions answered directly from sheet ──
+  var isStockQuery = /stock|intake|vehicle|machinery|listing|listings/.test(t) ||
+                     (/product|item|loaded|uploaded/.test(t) && !/lead|client|contractor/.test(t));
+  if (isStockQuery) {
     callBackend('getStock').then(function(data) {
       if (!data || data.error || !data.items || !data.items.length) {
         respond('I could not retrieve the stock intake right now, sir. Please try again.', text);
         return;
       }
-      var i = data.items[0]; // already sorted newest first
-      var msg = 'The latest item on the stock intake is a ' + i.year + ' ' + i.make + ' ' + i.model +
-                ', submitted by ' + i.seller + ' from ' + i.province + '. Status is ' + i.status +
-                ', submitted on ' + i.timestamp + '.';
+      var items = data.items; // newest first (reversed in Code.gs)
+      var msg = answerStockQuery(t, text, items, data.total);
       respond(msg, text);
     }).catch(function() {
       respond('I could not reach the stock intake system right now, sir.', text);
