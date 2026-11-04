@@ -530,6 +530,7 @@ const COMMANDS = [
   { icon:'🚛', text:'STOCK',       sub:'Intake review',   cmd:'give me an overview of the stock intake' },
   { icon:'👤', text:'BUYER',       sub:'Add buyer',        cmd:'__ADD_BUYER__' },
   { icon:'📢', text:'ADS',         sub:'Stock ads',        cmd:'__VIEW_ADS__' },
+  { icon:'🔧', text:'DIAG',        sub:'System check',     cmd:'__DIAGNOSTICS__' },
 ];
 
 function buildOrbital() {
@@ -592,8 +593,9 @@ function buildOrbital() {
     btn.style.top  = by + 'px';
     btn.style.zIndex = '5';
     btn.innerHTML = `<span class="ob-icon">${cmd.icon}</span><span class="ob-text">${cmd.text}</span><span class="ob-sub">${cmd.sub}</span>`;
-    btn.onclick = () => cmd.cmd === '__ADD_BUYER__' ? openBuyerForm() :
-                        cmd.cmd === '__VIEW_ADS__'  ? openAdsPanel()  :
+    btn.onclick = () => cmd.cmd === '__ADD_BUYER__'    ? openBuyerForm()    :
+                        cmd.cmd === '__VIEW_ADS__'     ? openAdsPanel()     :
+                        cmd.cmd === '__DIAGNOSTICS__'  ? runDiagnostics()   :
                         handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
   });
@@ -1647,6 +1649,13 @@ function isWebSearchQuery(t) {
 
 function handleCommand(text){
   const t = text.toLowerCase().trim();
+
+  // ── DIAGNOSTICS TRIGGER — voice or text ──
+  if (/diagnos|system check|system status|run diag|diag report/.test(t)) {
+    runDiagnostics();
+    return;
+  }
+
   setOrbState('thinking');
   document.getElementById('responseBody').textContent = 'Thinking…';
 
@@ -1809,8 +1818,10 @@ function handleCommand(text){
     return askGemini(sys).then(function(answer){
       // If Gemini returns a quota/demand error message, build a fallback instead
       if (/quota|high demand|no longer available|exceeded|rate.?limit/i.test(answer)) {
+        window._lastGeminiStatus = 'QUOTA EXCEEDED — ' + new Date().toTimeString().substring(0,8);
         return buildFallbackAnswer(text, capturedLeads, capturedCt, capturedFin, capturedStock);
       }
+      window._lastGeminiStatus = 'OK — last call ' + new Date().toTimeString().substring(0,8);
       return answer;
     });
 
@@ -1988,7 +1999,142 @@ function submitBuyerForm() {
     respond('Buyer ' + name + ' has been submitted. Please verify in the Buyers sheet.', '');
   });
 }
+
+// ── SYSTEM DIAGNOSTICS ────────────────────────────────────────
+var diagReport = '';
+
+function runDiagnostics() {
+  var panel = document.getElementById('diagPanelOverlay');
+  var content = document.getElementById('diagContent');
+  panel.style.display = 'flex';
+  content.textContent = 'Running diagnostics…';
+  diagReport = '';
+
+  var now = new Date();
+  var lines = [];
+  lines.push('JARVIS SYSTEM DIAGNOSTICS');
+  lines.push('Generated: ' + now.toDateString() + ' ' + now.toTimeString().substring(0,8) + ' SAST');
+  lines.push('User: ' + (jarvisUserName || 'Unknown'));
+  lines.push('─'.repeat(42));
+
+  // Voice engine check
+  var voiceStatus = 'Not supported';
+  var voiceName = 'N/A';
+  if (window.speechSynthesis) {
+    var voices = window.speechSynthesis.getVoices();
+    var activeVoice =
+      voices.find(v=>/google uk english male/i.test(v.name)) ||
+      voices.find(v=>/daniel/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/james/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/mark/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/david/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/oliver/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>/male/i.test(v.name)&&v.lang.startsWith('en')) ||
+      voices.find(v=>v.lang==='en-GB') || null;
+    voiceStatus = voices.length ? 'OK (' + voices.length + ' voices loaded)' : 'No voices loaded';
+    voiceName = activeVoice ? activeVoice.name + ' [' + activeVoice.lang + ']' : 'Fallback (en-GB)';
+  }
+  lines.push('VOICE ENGINE : ' + voiceStatus);
+  lines.push('ACTIVE VOICE : ' + voiceName);
+  var srStatus = (window.SpeechRecognition || window.webkitSpeechRecognition) ? 'OK' : 'Not supported';
+  lines.push('SPEECH INPUT : ' + srStatus);
+  lines.push('─'.repeat(42));
+
+  // Cache status
+  lines.push('CACHE — LEADS      : ' + (jarvisCachedLeads ? 'Loaded (' + (jarvisCachedLeads.total || 0) + ' leads)' : 'Not loaded'));
+  lines.push('CACHE — CONTRACTORS: ' + (jarvisCachedContractors ? 'Loaded (' + (jarvisCachedContractors.contractors ? jarvisCachedContractors.contractors.length : 0) + ' active)' : 'Not loaded'));
+  lines.push('CACHE — DIRECTORY  : ' + (Object.keys(jarvisContractorMap).length ? 'Loaded (' + Object.keys(jarvisContractorMap).length + ' IC codes)' : 'Not loaded'));
+  lines.push('─'.repeat(42));
+  lines.push('BACKEND CONNECTIVITY — pinging endpoints…');
+  content.textContent = lines.join('\n');
+
+  var endpoints = [
+    { name: 'getLeads       ', action: 'getLeads' },
+    { name: 'getContractors ', action: 'getContractors' },
+    { name: 'getStock       ', action: 'getStock' },
+    { name: 'getSummary     ', action: 'getSummary' },
+    { name: 'getDirectory   ', action: 'getDirectory' },
+  ];
+
+  var results = [];
+  var pending = endpoints.length;
+
+  endpoints.forEach(function(ep) {
+    var start = Date.now();
+    var timer = setTimeout(function() {
+      results.push(ep.name + ': ✗ TIMEOUT');
+      checkDone();
+    }, 35000);
+
+    callBackend(ep.action).then(function(data) {
+      clearTimeout(timer);
+      var ms = Date.now() - start;
+      var detail = '';
+      if (data && data.error) detail = ' — ERROR: ' + data.error.substring(0, 50);
+      else if (ep.action === 'getLeads' && data) detail = ' — ' + (data.total || 0) + ' leads';
+      else if (ep.action === 'getContractors' && data) detail = ' — ' + (data.contractors ? data.contractors.length : 0) + ' contractors';
+      else if (ep.action === 'getStock' && data) detail = ' — ' + (data.total || 0) + ' items';
+      else if (ep.action === 'getSummary' && data && data.summary) detail = ' — income R' + data.summary.income;
+      else if (ep.action === 'getDirectory' && data) detail = ' — ' + (data.directory ? data.directory.length : 0) + ' IC codes';
+      results.push(ep.name + ': ✓ OK (' + ms + 'ms)' + detail);
+      checkDone();
+    }).catch(function() {
+      clearTimeout(timer);
+      results.push(ep.name + ': ✗ FAILED');
+      checkDone();
+    });
+  });
+
+  function checkDone() {
+    pending--;
+    var current = lines.slice();
+    results.forEach(function(r) { current.push('  ' + r); });
+    if (pending > 0) {
+      current.push('  … waiting for ' + pending + ' more');
+    } else {
+      current.push('─'.repeat(42));
+      current.push('GEMINI STATUS  : ' + (window._lastGeminiStatus || 'Unknown — run a voice/text query first'));
+      current.push('─'.repeat(42));
+      current.push('END OF REPORT');
+    }
+    diagReport = current.join('\n');
+    content.textContent = diagReport;
+  }
+}
+
+function copyDiagnostics() {
+  if (!diagReport) return;
+  var btn = document.getElementById('diagCopyBtn');
+  navigator.clipboard.writeText(diagReport).then(function() {
+    btn.textContent = '✅ COPIED';
+    setTimeout(function(){ btn.textContent = '⎘ COPY'; }, 2000);
+  }).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = diagReport;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    btn.textContent = '✅ COPIED';
+    setTimeout(function(){ btn.textContent = '⎘ COPY'; }, 2000);
+  });
+}
 </script>
+
+<!-- ── DIAGNOSTICS PANEL OVERLAY ── -->
+<div id="diagPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#0d1120;border:1px solid rgba(212,175,55,0.35);border-radius:16px;padding:24px;width:94%;max-width:500px;max-height:88vh;overflow-y:auto;box-shadow:0 0 40px rgba(212,175,55,0.1);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <span style="color:#d4af37;font-family:'Orbitron',sans-serif;font-size:0.95rem;letter-spacing:3px;">🔧 SYSTEM DIAGNOSTICS</span>
+      <button onclick="document.getElementById('diagPanelOverlay').style.display='none'" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div id="diagContent" style="font-family:monospace;font-size:0.78rem;line-height:1.9;color:#c8d0e0;white-space:pre-wrap;"></div>
+    <div style="display:flex;gap:10px;margin-top:18px;">
+      <button onclick="runDiagnostics()" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(212,175,55,0.4);background:rgba(212,175,55,0.08);color:#d4af37;font-family:'Orbitron',sans-serif;font-size:0.7rem;letter-spacing:2px;cursor:pointer;">↺ RERUN</button>
+      <button onclick="copyDiagnostics()" id="diagCopyBtn" style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(0,212,255,0.4);background:rgba(0,212,255,0.08);color:#00d4ff;font-family:'Orbitron',sans-serif;font-size:0.7rem;letter-spacing:2px;cursor:pointer;">⎘ COPY</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── ADS PANEL OVERLAY ── -->
 <div id="adsPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0;">
