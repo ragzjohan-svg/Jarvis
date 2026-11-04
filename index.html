@@ -2018,6 +2018,7 @@ function toggleSite() {
   document.getElementById('siteStatusText').textContent = 'Checking…';
   document.getElementById('siteDot').style.background = '#888';
   document.getElementById('siteInstruction').textContent = '';
+  document.getElementById('pendingProductsList').textContent = 'Loading…';
 
   // Check stored state from backend
   var cbName = 'jarvisSiteCb_' + Date.now();
@@ -2034,6 +2035,40 @@ function toggleSite() {
   };
   script.src = JARVIS_BACKEND + '?action=getSiteStatus&callback=' + cbName;
   document.head.appendChild(script);
+
+  // Fetch pending products queue simultaneously
+  var cbProd = 'jarvisProdCb_' + Date.now();
+  var scriptProd = document.createElement('script');
+  var timerProd = setTimeout(function() {
+    delete window[cbProd]; scriptProd.remove();
+    document.getElementById('pendingProductsList').textContent = 'Could not load queue.';
+  }, 10000);
+  window[cbProd] = function(data) {
+    clearTimeout(timerProd); delete window[cbProd]; scriptProd.remove();
+    renderPendingProducts(data);
+  };
+  scriptProd.src = JARVIS_BACKEND + '?action=getPendingProducts&callback=' + cbProd;
+  document.head.appendChild(scriptProd);
+}
+
+function renderPendingProducts(data) {
+  var el = document.getElementById('pendingProductsList');
+  if (!data || data.error) {
+    el.textContent = 'Could not load queue.';
+    return;
+  }
+  if (data.count === 0) {
+    el.innerHTML = '<span style="color:rgba(74,222,128,0.7);">✓ No products waiting</span>';
+    return;
+  }
+  var html = '<div style="color:#f87171;font-weight:600;margin-bottom:6px;">' + data.count + ' product' + (data.count > 1 ? 's' : '') + ' waiting to load</div>';
+  data.items.forEach(function(item) {
+    html += '<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(212,175,55,0.15);border-radius:6px;padding:8px 10px;margin-bottom:6px;">';
+    html += '<div style="font-size:10px;color:rgba(180,190,210,0.5);margin-bottom:3px;">' + item.date + (item.hasImage ? ' &nbsp;🖼️' : '') + '</div>';
+    html += '<div style="font-size:12px;color:rgba(200,210,230,0.85);line-height:1.4;">' + item.snippet + '</div>';
+    html += '</div>';
+  });
+  el.innerHTML = html;
 }
 
 function renderSitePanel() {
@@ -2223,6 +2258,12 @@ function copyDiagnostics() {
 
     <!-- Instruction text -->
     <div id="siteInstruction" style="font-size:13px;color:rgba(180,190,210,0.7);margin-bottom:20px;line-height:1.6;padding:0 8px;"></div>
+
+    <!-- Pending products queue -->
+    <div id="pendingProductsSection" style="margin-bottom:20px;text-align:left;">
+      <div style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;color:#d4af37;margin-bottom:8px;">📦 PRODUCT QUEUE</div>
+      <div id="pendingProductsList" style="font-size:12px;color:rgba(180,190,210,0.6);font-style:italic;">Loading…</div>
+    </div>
 
     <!-- Mark state buttons -->
     <div style="display:flex;gap:10px;margin-bottom:20px;">
