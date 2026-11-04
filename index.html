@@ -531,6 +531,7 @@ const COMMANDS = [
   { icon:'👤', text:'BUYER',       sub:'Add buyer',        cmd:'__ADD_BUYER__' },
   { icon:'📢', text:'ADS',         sub:'Stock ads',        cmd:'__VIEW_ADS__' },
   { icon:'🔧', text:'DIAG',        sub:'System check',     cmd:'__DIAGNOSTICS__' },
+  { icon:'🌐', text:'SITE',        sub:'Toggle portal',    cmd:'__TOGGLE_SITE__' },
 ];
 
 function buildOrbital() {
@@ -596,6 +597,7 @@ function buildOrbital() {
     btn.onclick = () => cmd.cmd === '__ADD_BUYER__'    ? openBuyerForm()    :
                         cmd.cmd === '__VIEW_ADS__'     ? openAdsPanel()     :
                         cmd.cmd === '__DIAGNOSTICS__'  ? runDiagnostics()   :
+                        cmd.cmd === '__TOGGLE_SITE__'  ? toggleSite()       :
                         handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
   });
@@ -1656,6 +1658,12 @@ function handleCommand(text){
     return;
   }
 
+  // ── SITE TOGGLE TRIGGER — voice or text ──
+  if (/toggle site|site (on|off|offline|online|live)|turn (on|off) (the )?site|maintenance mode|switch site|portal (on|off|offline|online|live)/.test(t)) {
+    toggleSite();
+    return;
+  }
+
   setOrbState('thinking');
   document.getElementById('responseBody').textContent = 'Thinking…';
 
@@ -2000,6 +2008,98 @@ function submitBuyerForm() {
   });
 }
 
+// ── SITE TOGGLE ───────────────────────────────────────────────
+var _siteState = 'unknown'; // 'live' | 'offline' | 'unknown'
+
+function toggleSite() {
+  var panel = document.getElementById('sitePanelOverlay');
+  var statusEl = document.getElementById('siteStatusText');
+  var btnEl = document.getElementById('siteToggleBtn');
+  document.body.appendChild(panel);
+  panel.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:99999;align-items:center;justify-content:center;';
+  statusEl.textContent = 'Checking site status…';
+  btnEl.style.display = 'none';
+
+  // First check current state
+  callBackend('getSiteStatus', function(data) {
+    if (data && data.status) {
+      _siteState = data.status; // 'live' or 'offline'
+    } else {
+      _siteState = 'live'; // assume live if unknown
+    }
+    updateSitePanel();
+  });
+}
+
+function updateSitePanel() {
+  var statusEl = document.getElementById('siteStatusText');
+  var btnEl = document.getElementById('siteToggleBtn');
+  var dotEl = document.getElementById('siteDot');
+  if (_siteState === 'live') {
+    statusEl.textContent = 'Portal is currently LIVE — contractors can see it.';
+    statusEl.style.color = '#4ade80';
+    dotEl.style.background = '#4ade80';
+    btnEl.textContent = '⬛  TAKE OFFLINE';
+    btnEl.style.borderColor = '#f87171';
+    btnEl.style.color = '#f87171';
+  } else {
+    statusEl.textContent = 'Portal is currently OFFLINE — contractors see maintenance page.';
+    statusEl.style.color = '#f87171';
+    dotEl.style.background = '#f87171';
+    btnEl.textContent = '🟢  BRING ONLINE';
+    btnEl.style.borderColor = '#4ade80';
+    btnEl.style.color = '#4ade80';
+  }
+  btnEl.style.display = 'inline-block';
+}
+
+function executeSiteToggle() {
+  var statusEl = document.getElementById('siteStatusText');
+  var btnEl = document.getElementById('siteToggleBtn');
+  var action = _siteState === 'live' ? 'setSiteOffline' : 'setSiteLive';
+  statusEl.textContent = _siteState === 'live' ? 'Taking portal offline…' : 'Bringing portal online…';
+  statusEl.style.color = '#d4af37';
+  btnEl.style.display = 'none';
+
+  callBackend(action, function(data) {
+    if (data && data.success) {
+      _siteState = (_siteState === 'live') ? 'offline' : 'live';
+      var msg = _siteState === 'live'
+        ? 'Portal is now LIVE. Contractors can access it.'
+        : 'Portal is now OFFLINE. Safe to load products.';
+      statusEl.textContent = msg;
+      statusEl.style.color = _siteState === 'live' ? '#4ade80' : '#f87171';
+      document.getElementById('siteDot').style.background = _siteState === 'live' ? '#4ade80' : '#f87171';
+      speak(msg);
+      setTimeout(function() { btnEl.style.display = 'inline-block'; updateSitePanel(); }, 2000);
+    } else {
+      statusEl.textContent = 'Action failed — check backend. ' + (data && data.error ? data.error : '');
+      statusEl.style.color = '#f87171';
+      btnEl.style.display = 'inline-block';
+    }
+  });
+}
+
+function closeSitePanel() {
+  var panel = document.getElementById('sitePanelOverlay');
+  panel.style.display = 'none';
+}
+
+function callBackend(action, callback) {
+  var cbName = 'jarvisCb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+  var script = document.createElement('script');
+  var timer = setTimeout(function() {
+    delete window[cbName]; script.remove();
+    callback({ error: 'Timeout' });
+  }, 15000);
+  window[cbName] = function(data) {
+    clearTimeout(timer); delete window[cbName]; script.remove();
+    callback(data);
+  };
+  script.src = JARVIS_BACKEND + '?action=' + action + '&callback=' + cbName;
+  document.head.appendChild(script);
+}
+
 // ── SYSTEM DIAGNOSTICS ────────────────────────────────────────
 var diagReport = '';
 
@@ -2122,6 +2222,21 @@ function copyDiagnostics() {
   });
 }
 </script>
+
+<!-- ── SITE TOGGLE PANEL OVERLAY ── -->
+<div id="sitePanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:99999;align-items:center;justify-content:center;">
+  <div style="background:#0d1120;border:1px solid rgba(212,175,55,0.35);border-radius:16px;padding:32px;width:90%;max-width:420px;box-shadow:0 0 40px rgba(212,175,55,0.15);text-align:center;">
+    <div style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:4px;color:#d4af37;margin-bottom:20px;">/// CONTRACTOR PORTAL</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;">
+      <div id="siteDot" style="width:14px;height:14px;border-radius:50%;background:#888;box-shadow:0 0 10px currentColor;transition:background 0.4s;"></div>
+      <div id="siteStatusText" style="font-family:'Rajdhani',sans-serif;font-size:16px;color:#e8eaf0;">Checking…</div>
+    </div>
+    <div style="font-size:12px;color:rgba(180,190,210,0.5);margin-bottom:24px;">https://sites.google.com/view/ivacontractorportal/home</div>
+    <button id="siteToggleBtn" onclick="executeSiteToggle()" style="display:none;font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:2px;padding:12px 28px;background:transparent;border:1px solid;border-radius:8px;cursor:pointer;margin-bottom:16px;transition:all 0.2s;">TOGGLE</button>
+    <br>
+    <button onclick="closeSitePanel()" style="font-family:'Rajdhani',sans-serif;font-size:13px;letter-spacing:2px;padding:8px 20px;background:transparent;border:1px solid rgba(212,175,55,0.3);border-radius:6px;color:rgba(212,175,55,0.6);cursor:pointer;">CLOSE</button>
+  </div>
+</div>
 
 <!-- ── DIAGNOSTICS PANEL OVERLAY ── -->
 <div id="diagPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;">
