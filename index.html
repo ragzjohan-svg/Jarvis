@@ -1627,7 +1627,7 @@ function buildFallbackAnswer(text, leadsData, ctData, finData, stockData) {
 // ── COMMAND ROUTER ────────────────────────────────────────────
 function isWebSearchQuery(t) {
   // Explicit web search requests always go to web
-  var explicitWeb = /search.*web|search online|look.*up online|google|search for/.test(t);
+  var explicitWeb = /search.*web|search online|look.*up online|google|search for|on the internet|on the market|internet/.test(t);
   if (explicitWeb) return true;
 
   // Anything about IVA's own data — leads, stock, buyers, financials — never goes to web
@@ -1668,11 +1668,16 @@ function handleCommand(text){
           if(conversationHistory) conversationHistory.push({role:'user',text:text});
           speak(spoken);
         } else if (data) {
-          // Backend responded but no answer — still show panel with fallback
-          showWebResults(text, 'No detailed answer found. Try one of the links below.', []);
+          // Backend responded but Gemini returned no answer text (quota likely still recovering)
+          // Show a helpful fallback with a direct Google search link
+          var googleUrl = 'https://www.google.com/search?q=' + encodeURIComponent(text);
+          var fallbackAnswer = 'The AI search is still warming up after the quota reset. ' +
+            'I\'ve prepared a direct Google search for you below.';
+          showWebResults(text, fallbackAnswer, [{ title: 'Search Google: ' + text, url: googleUrl }]);
           setOrbState('idle');
+          speak('The search assistant is still loading, ' + jarvisUserTitle + '. I have opened a Google search for you in the panel.');
         } else {
-          respond('I could not find a result on the web right now, ' + jarvisUserTitle + '. Try rephrasing or ask me something from the business data.', text);
+          respond('I could not reach the web search right now, ' + jarvisUserTitle + '. Try again in a moment.', text);
         }
       }).catch(function() {
         respond('Web search is unavailable right now, ' + jarvisUserTitle + '.', text);
