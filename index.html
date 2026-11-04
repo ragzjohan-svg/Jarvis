@@ -2013,91 +2013,71 @@ var _siteState = 'unknown'; // 'live' | 'offline' | 'unknown'
 
 function toggleSite() {
   var panel = document.getElementById('sitePanelOverlay');
-  var statusEl = document.getElementById('siteStatusText');
-  var btnEl = document.getElementById('siteToggleBtn');
   document.body.appendChild(panel);
   panel.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:99999;align-items:center;justify-content:center;';
-  statusEl.textContent = 'Checking site status…';
-  btnEl.style.display = 'none';
+  document.getElementById('siteStatusText').textContent = 'Checking…';
+  document.getElementById('siteDot').style.background = '#888';
+  document.getElementById('siteInstruction').textContent = '';
 
-  // First check current state
-  callBackend('getSiteStatus', function(data) {
-    if (data && data.status) {
-      _siteState = data.status; // 'live' or 'offline'
-    } else {
-      _siteState = 'live'; // assume live if unknown
-    }
-    updateSitePanel();
-  });
-}
-
-function updateSitePanel() {
-  var statusEl = document.getElementById('siteStatusText');
-  var btnEl = document.getElementById('siteToggleBtn');
-  var dotEl = document.getElementById('siteDot');
-  if (_siteState === 'live') {
-    statusEl.textContent = 'Portal is currently LIVE — contractors can see it.';
-    statusEl.style.color = '#4ade80';
-    dotEl.style.background = '#4ade80';
-    btnEl.textContent = '⬛  TAKE OFFLINE';
-    btnEl.style.borderColor = '#f87171';
-    btnEl.style.color = '#f87171';
-  } else {
-    statusEl.textContent = 'Portal is currently OFFLINE — contractors see maintenance page.';
-    statusEl.style.color = '#f87171';
-    dotEl.style.background = '#f87171';
-    btnEl.textContent = '🟢  BRING ONLINE';
-    btnEl.style.borderColor = '#4ade80';
-    btnEl.style.color = '#4ade80';
-  }
-  btnEl.style.display = 'inline-block';
-}
-
-function executeSiteToggle() {
-  var statusEl = document.getElementById('siteStatusText');
-  var btnEl = document.getElementById('siteToggleBtn');
-  var action = _siteState === 'live' ? 'setSiteOffline' : 'setSiteLive';
-  statusEl.textContent = _siteState === 'live' ? 'Taking portal offline…' : 'Bringing portal online…';
-  statusEl.style.color = '#d4af37';
-  btnEl.style.display = 'none';
-
-  callBackend(action, function(data) {
-    if (data && data.success) {
-      _siteState = (_siteState === 'live') ? 'offline' : 'live';
-      var msg = _siteState === 'live'
-        ? 'Portal is now LIVE. Contractors can access it.'
-        : 'Portal is now OFFLINE. Safe to load products.';
-      statusEl.textContent = msg;
-      statusEl.style.color = _siteState === 'live' ? '#4ade80' : '#f87171';
-      document.getElementById('siteDot').style.background = _siteState === 'live' ? '#4ade80' : '#f87171';
-      speak(msg);
-      setTimeout(function() { btnEl.style.display = 'inline-block'; updateSitePanel(); }, 2000);
-    } else {
-      statusEl.textContent = 'Action failed — check backend. ' + (data && data.error ? data.error : '');
-      statusEl.style.color = '#f87171';
-      btnEl.style.display = 'inline-block';
-    }
-  });
-}
-
-function closeSitePanel() {
-  var panel = document.getElementById('sitePanelOverlay');
-  panel.style.display = 'none';
-}
-
-function callBackend(action, callback) {
-  var cbName = 'jarvisCb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+  // Check stored state from backend
+  var cbName = 'jarvisSiteCb_' + Date.now();
   var script = document.createElement('script');
   var timer = setTimeout(function() {
     delete window[cbName]; script.remove();
-    callback({ error: 'Timeout' });
-  }, 15000);
+    _siteState = 'unknown';
+    renderSitePanel();
+  }, 8000);
   window[cbName] = function(data) {
     clearTimeout(timer); delete window[cbName]; script.remove();
-    callback(data);
+    _siteState = (data && data.status) ? data.status : 'unknown';
+    renderSitePanel();
   };
+  script.src = JARVIS_BACKEND + '?action=getSiteStatus&callback=' + cbName;
+  document.head.appendChild(script);
+}
+
+function renderSitePanel() {
+  var statusEl = document.getElementById('siteStatusText');
+  var dotEl = document.getElementById('siteDot');
+  var instrEl = document.getElementById('siteInstruction');
+
+  if (_siteState === 'live') {
+    statusEl.textContent = 'LIVE';
+    statusEl.style.color = '#4ade80';
+    dotEl.style.background = '#4ade80';
+    instrEl.innerHTML = 'To take it offline:<br>1. Click <strong style="color:#00d4ff">OPEN SITE SETTINGS</strong> above<br>2. Click <strong>Publish</strong> (top right) → <strong>Unpublish</strong><br>3. Click <strong style="color:#f87171">MARK OFFLINE</strong> below';
+  } else if (_siteState === 'offline') {
+    statusEl.textContent = 'OFFLINE';
+    statusEl.style.color = '#f87171';
+    dotEl.style.background = '#f87171';
+    instrEl.innerHTML = 'To bring it back online:<br>1. Click <strong style="color:#00d4ff">OPEN SITE SETTINGS</strong> above<br>2. Click <strong>Publish</strong> (top right) → <strong>Publish</strong><br>3. Click <strong style="color:#4ade80">MARK LIVE</strong> below';
+  } else {
+    statusEl.textContent = 'UNKNOWN';
+    statusEl.style.color = '#d4af37';
+    dotEl.style.background = '#d4af37';
+    instrEl.textContent = 'Mark the current state below after checking the site.';
+  }
+}
+
+function markSiteState(state) {
+  _siteState = state;
+  // Save to backend
+  var cbName = 'jarvisSiteSet_' + Date.now();
+  var action = state === 'offline' ? 'setSiteOffline' : 'setSiteLive';
+  var script = document.createElement('script');
+  window[cbName] = function() { delete window[cbName]; script.remove(); };
   script.src = JARVIS_BACKEND + '?action=' + action + '&callback=' + cbName;
   document.head.appendChild(script);
+
+  renderSitePanel();
+  var msg = state === 'offline'
+    ? 'Portal marked as offline. Safe to load products.'
+    : 'Portal marked as live. Contractors can access it.';
+  speak(msg);
+}
+
+function closeSitePanel() {
+  document.getElementById('sitePanelOverlay').style.display = 'none';
 }
 
 // ── SYSTEM DIAGNOSTICS ────────────────────────────────────────
@@ -2225,16 +2205,32 @@ function copyDiagnostics() {
 
 <!-- ── SITE TOGGLE PANEL OVERLAY ── -->
 <div id="sitePanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:99999;align-items:center;justify-content:center;">
-  <div style="background:#0d1120;border:1px solid rgba(212,175,55,0.35);border-radius:16px;padding:32px;width:90%;max-width:420px;box-shadow:0 0 40px rgba(212,175,55,0.15);text-align:center;">
+  <div style="background:#0d1120;border:1px solid rgba(212,175,55,0.35);border-radius:16px;padding:32px;width:90%;max-width:440px;box-shadow:0 0 40px rgba(212,175,55,0.15);text-align:center;">
     <div style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:4px;color:#d4af37;margin-bottom:20px;">/// CONTRACTOR PORTAL</div>
-    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;">
-      <div id="siteDot" style="width:14px;height:14px;border-radius:50%;background:#888;box-shadow:0 0 10px currentColor;transition:background 0.4s;"></div>
-      <div id="siteStatusText" style="font-family:'Rajdhani',sans-serif;font-size:16px;color:#e8eaf0;">Checking…</div>
+
+    <!-- Status indicator -->
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px;">
+      <div id="siteDot" style="width:14px;height:14px;border-radius:50%;background:#888;transition:background 0.4s;"></div>
+      <div id="siteStatusText" style="font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:600;color:#e8eaf0;">Checking…</div>
     </div>
-    <div style="font-size:12px;color:rgba(180,190,210,0.5);margin-bottom:24px;">https://sites.google.com/view/ivacontractorportal/home</div>
-    <button id="siteToggleBtn" onclick="executeSiteToggle()" style="display:none;font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:2px;padding:12px 28px;background:transparent;border:1px solid;border-radius:8px;cursor:pointer;margin-bottom:16px;transition:all 0.2s;">TOGGLE</button>
-    <br>
-    <button onclick="closeSitePanel()" style="font-family:'Rajdhani',sans-serif;font-size:13px;letter-spacing:2px;padding:8px 20px;background:transparent;border:1px solid rgba(212,175,55,0.3);border-radius:6px;color:rgba(212,175,55,0.6);cursor:pointer;">CLOSE</button>
+    <div style="font-size:11px;color:rgba(180,190,210,0.4);margin-bottom:24px;letter-spacing:1px;">sites.google.com/view/ivacontractorportal</div>
+
+    <!-- Open site settings button -->
+    <a id="siteSettingsLink" href="https://sites.google.com/view/ivacontractorportal/home" target="_blank"
+       style="display:inline-block;font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:2px;padding:11px 22px;background:transparent;border:1px solid rgba(0,212,255,0.5);border-radius:8px;color:#00d4ff;text-decoration:none;margin-bottom:20px;">
+      🔗 OPEN SITE SETTINGS
+    </a>
+
+    <!-- Instruction text -->
+    <div id="siteInstruction" style="font-size:13px;color:rgba(180,190,210,0.7);margin-bottom:20px;line-height:1.6;padding:0 8px;"></div>
+
+    <!-- Mark state buttons -->
+    <div style="display:flex;gap:10px;margin-bottom:20px;">
+      <button onclick="markSiteState('offline')" style="flex:1;font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:1px;padding:11px 8px;background:transparent;border:1px solid rgba(248,113,113,0.5);border-radius:8px;color:#f87171;cursor:pointer;">⬛ MARK OFFLINE</button>
+      <button onclick="markSiteState('live')" style="flex:1;font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:1px;padding:11px 8px;background:transparent;border:1px solid rgba(74,222,128,0.5);border-radius:8px;color:#4ade80;cursor:pointer;">🟢 MARK LIVE</button>
+    </div>
+
+    <button onclick="closeSitePanel()" style="font-family:'Rajdhani',sans-serif;font-size:13px;letter-spacing:2px;padding:8px 24px;background:transparent;border:1px solid rgba(212,175,55,0.3);border-radius:6px;color:rgba(212,175,55,0.6);cursor:pointer;">CLOSE</button>
   </div>
 </div>
 
