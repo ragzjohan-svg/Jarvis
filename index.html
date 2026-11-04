@@ -2006,7 +2006,9 @@ var diagReport = '';
 function runDiagnostics() {
   var panel = document.getElementById('diagPanelOverlay');
   var content = document.getElementById('diagContent');
-  panel.style.display = 'flex';
+  // Move to body root to escape any stacking context issues
+  document.body.appendChild(panel);
+  panel.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:99999;align-items:center;justify-content:center;';
   content.textContent = 'Running diagnostics…';
   diagReport = '';
 
