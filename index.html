@@ -142,11 +142,19 @@
       width: 280px; height: 280px;
       cursor: pointer; user-select: none;
     }
-    canvas#globeCanvas {
+    /* New Three.js dual-canvas globe */
+    #iva-earth {
       position: absolute; inset: 0;
       border-radius: 50%;
-      width: 280px; height: 280px;
+      overflow: hidden;
     }
+    #iva-earth canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      display: block;
+    }
+    #iva-hud { pointer-events: none; z-index: 3; }
+    #iva-three { z-index: 1; }
     .globe-ring {
       position: absolute; inset: 0; border-radius: 50%;
       border: 1.5px solid rgba(212,175,55,0.4);
@@ -325,6 +333,8 @@
       font-size: 12px; color: var(--red); text-align: center; margin-top: 8px;
     }
   </style>
+  <!-- Three.js for procedural Earth globe -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
 </head>
 <body>
 
@@ -372,7 +382,10 @@
     <!-- Globe at centre -->
     <div class="globe-wrap">
       <div class="globe-container" id="orb" onclick="toggleListen()">
-        <canvas id="globeCanvas" width="280" height="280"></canvas>
+        <div id="iva-earth">
+          <canvas id="iva-three"></canvas>
+          <canvas id="iva-hud"></canvas>
+        </div>
         <div class="globe-ring"></div>
         <div class="globe-hit"></div>
       </div>
@@ -914,7 +927,11 @@ function setOrbState(state){
   orb.className = 'globe-container'+(state!=='idle'?' '+state:'');
   const labels = { listening:'LISTENING…', thinking:'THINKING…', speaking:'SPEAKING…', idle:'TAP TO SPEAK' };
   label.textContent = labels[state]||'TAP TO SPEAK';
-  globeState = state;
+  // Drive the Three.js globe state (thinking maps to speaking for globe)
+  if(window.globeSetState){
+    var gs = (state==='thinking')?'speaking':state;
+    if(['idle','listening','speaking'].includes(gs)) window.globeSetState(gs);
+  }
 }
 
 // ── SPEECH SYNTHESIS ─────────────────────────────────────────
@@ -961,265 +978,373 @@ function speak(text){
   else window.speechSynthesis.onvoiceschanged = trySpeak;
 }
 
-// ── 3D HOLOGRAPHIC GLOBE ANIMATION ───────────────────────────
-var globeState = 'idle';
-(function(){
-  const canvas = document.getElementById('globeCanvas');
-  const ctx = canvas.getContext('2d');
-  // Use actual canvas pixel size
-  const W=280, H=280;
-  canvas.width=W; canvas.height=H;
-  const CX=W/2, CY=H/2, R=118;
+// ── THREE.JS PROCEDURAL EARTH GLOBE ──────────────────────────
+(() => {
+"use strict";
 
-  // State colours: idle=orange/gold, listening=gold, thinking=purple, speaking=cyan
-  function stateColors(){
-    if(globeState==='thinking')  return { pri:[167,100,255], sec:[100,60,200], glow:'rgba(167,100,255,' };
-    if(globeState==='speaking')  return { pri:[0,220,255],   sec:[0,140,200],  glow:'rgba(0,220,255,' };
-    if(globeState==='listening') return { pri:[255,180,0],   sec:[212,120,0],  glow:'rgba(255,180,0,' };
-    // idle — blue/orange HUD theme matching the icon
-    return { pri:[0,160,255], sec:[255,120,0], glow:'rgba(0,160,255,' };
+const root = document.getElementById("iva-earth");
+const threeCanvas = document.getElementById("iva-three");
+const hudCanvas = document.getElementById("iva-hud");
+const hud = hudCanvas.getContext("2d");
+
+if (!window.THREE || !root || !hud) {
+  console.error("IVA JARVIS: Three.js or canvas unavailable.");
+  return;
+}
+
+const THREE = window.THREE;
+
+const CONFIG = {
+  earthRadius: 1.25,
+  nodeCount: 110,
+  maxPixelRatio: 2,
+  states: {
+    idle:      { speed: 0.035, glow: 0.65, colour: 0x249dff },
+    listening: { speed: 0.12,  glow: 1.5,  colour: 0x8af5ff },
+    speaking:  { speed: 0.075, glow: 1.1,  colour: 0x37dfff }
+  }
+};
+
+let currentState = "idle";
+let elapsed = 0;
+let lastTime = 0;
+let rippleTimer = 0;
+let frameId = 0;
+let destroyed = false;
+let width = 1;
+let height = 1;
+let pixelRatio = 1;
+
+// ── CANVAS TEXTURE GENERATOR ────────────────────────────────
+function createEarthTextures() {
+  const W = 2048, H = 1024;
+  const mapCanvas = document.createElement("canvas");
+  mapCanvas.width = W; mapCanvas.height = H;
+  const g = mapCanvas.getContext("2d");
+
+  const ocean = g.createLinearGradient(0,0,0,H);
+  ocean.addColorStop(0,"#071d40"); ocean.addColorStop(.25,"#07508a");
+  ocean.addColorStop(.5,"#063d76"); ocean.addColorStop(.75,"#07508b");
+  ocean.addColorStop(1,"#071d40");
+  g.fillStyle = ocean; g.fillRect(0,0,W,H);
+
+  for(let i=0;i<700;i++){
+    const x=Math.random()*W, y=Math.random()*H, r=20+Math.random()*100;
+    const grad=g.createRadialGradient(x,y,0,x,y,r);
+    grad.addColorStop(0,Math.random()>.5?"rgba(27,104,151,.16)":"rgba(0,9,34,.22)");
+    grad.addColorStop(1,"transparent");
+    g.fillStyle=grad; g.fillRect(x-r,y-r,r*2,r*2);
   }
 
-  // Concentric rings: each at different axis tilt
-  const rings = [
-    { a:0,    b:0,     r:R+14, speed:0.006,  lw:1.2, dash:[8,6],  phase:0    },
-    { a:0.5,  b:0.3,   r:R+22, speed:-0.004, lw:0.8, dash:[4,10], phase:1.2  },
-    { a:-0.4, b:0.8,   r:R+31, speed:0.009,  lw:1.0, dash:[6,8],  phase:2.5  },
-    { a:1.2,  b:-0.2,  r:R+40, speed:-0.007, lw:0.6, dash:[3,12], phase:0.7  },
+  function xy(lon,lat){ return [(lon+180)/360*W,(90-lat)/180*H]; }
+
+  const continents = [
+    [[-168,66],[-158,71],[-143,72],[-134,69],[-128,61],[-124,55],[-130,49],[-125,43],[-123,39],[-117,33],[-112,30],[-107,29],[-104,25],[-98,22],[-91,18],[-87,16],[-83,10],[-77,9],[-78,18],[-84,22],[-82,27],[-80,32],[-76,36],[-73,41],[-68,45],[-61,47],[-57,52],[-61,57],[-66,59],[-72,62],[-80,67],[-90,72],[-102,74],[-116,72],[-130,70],[-145,70],[-158,68]],
+    [[-52,83],[-43,82],[-30,78],[-24,72],[-31,65],[-39,60],[-47,59],[-54,63],[-58,69],[-55,76]],
+    [[-81,12],[-75,10],[-69,11],[-63,10],[-58,6],[-52,3],[-49,-2],[-50,-8],[-45,-14],[-43,-22],[-47,-28],[-50,-34],[-55,-40],[-61,-47],[-66,-55],[-70,-52],[-73,-44],[-75,-35],[-77,-26],[-79,-14],[-80,-4],[-81,5]],
+    [[-10,36],[-9,43],[-5,48],[-10,52],[-6,55],[-2,58],[5,59],[10,55],[15,57],[20,61],[27,66],[35,69],[40,64],[35,58],[30,54],[28,48],[24,45],[19,41],[14,39],[10,36],[4,36],[-2,36]],
+    [[-17,37],[-8,36],[2,37],[10,37],[18,34],[25,31],[33,31],[35,26],[43,12],[50,11],[48,3],[42,-2],[41,-12],[35,-20],[31,-29],[25,-34],[18,-35],[12,-32],[10,-24],[5,-15],[1,-8],[-5,-1],[-9,5],[-15,12],[-17,22],[-16,30]],
+    [[26,40],[35,45],[43,49],[50,53],[58,56],[65,59],[72,61],[82,60],[90,57],[98,54],[105,52],[112,55],[120,52],[127,49],[134,45],[141,43],[146,39],[140,35],[135,34],[130,31],[125,27],[120,22],[115,19],[110,19],[106,15],[105,10],[109,7],[115,4],[119,-1],[116,-5],[109,-6],[104,0],[100,5],[95,10],[91,17],[87,21],[81,23],[77,27],[72,30],[68,26],[63,25],[58,28],[53,26],[49,30],[44,35],[38,38],[32,37]],
+    [[35,31],[42,31],[49,29],[55,25],[57,19],[53,15],[48,13],[43,12],[40,17],[37,22]],
+    [[68,24],[75,29],[82,28],[88,25],[91,22],[87,17],[84,10],[80,7],[77,9],[74,15],[70,19]],
+    [[130,31],[135,34],[140,39],[144,43],[146,40],[142,35],[137,31],[133,30]],
+    [[113,-22],[115,-18],[123,-16],[130,-12],[137,-12],[142,-15],[149,-20],[153,-27],[150,-34],[145,-39],[137,-37],[130,-34],[122,-33],[116,-30]],
+    [[49,-13],[51,-16],[50,-22],[47,-25],[44,-21],[45,-16]],
+    [[-8,50],[-6,54],[-5,58],[-3,59],[0,56],[1,52],[-2,50]],
+    [[-25,64],[-20,67],[-15,66],[-17,63],[-22,63]],
+    [[-180,-72],[-150,-70],[-120,-73],[-90,-71],[-60,-74],[-30,-70],[0,-73],[30,-70],[60,-73],[90,-70],[120,-73],[150,-70],[180,-72],[180,-90],[-180,-90]]
   ];
 
-  // Orbital data fragments — small HUD labels orbiting
-  const dataFrags = [
-    { ring:0, t:0,    speed:0.008,  label:'IVA' },
-    { ring:1, t:2.1,  speed:-0.006, label:'SYS' },
-    { ring:2, t:4.3,  speed:0.011,  label:'AI'  },
-    { ring:3, t:1.5,  speed:-0.009, label:'NET' },
-  ];
+  continents.forEach((poly,index)=>{
+    g.beginPath();
+    poly.forEach((p,i)=>{ const [x,y]=xy(p[0],p[1]); i===0?g.moveTo(x,y):g.lineTo(x,y); });
+    g.closePath();
+    const land=g.createLinearGradient(0,index%2===0?100:400,0,H);
+    land.addColorStop(0,"#d3d1aa"); land.addColorStop(.22,"#8d9b69");
+    land.addColorStop(.42,"#b6a16d"); land.addColorStop(.62,"#788e5d");
+    land.addColorStop(.82,"#a08b68"); land.addColorStop(1,"#d4d2b0");
+    g.fillStyle=land; g.fill();
+    g.strokeStyle="rgba(185,225,240,.42)"; g.lineWidth=3; g.stroke();
+  });
 
-  // Lat/lon grid points on sphere
-  const gridLat=[-60,-30,0,30,60].map(d=>d*Math.PI/180);
-  const gridLon=Array.from({length:12},(_,i)=>i/12*Math.PI*2);
+  g.save(); g.globalCompositeOperation="multiply";
+  const noise=document.createElement("canvas"); noise.width=512; noise.height=256;
+  const ng=noise.getContext("2d"); const image=ng.createImageData(512,256);
+  for(let i=0;i<image.data.length;i+=4){ const v=100+Math.random()*155; image.data[i]=v; image.data[i+1]=v; image.data[i+2]=v; image.data[i+3]=40; }
+  ng.putImageData(image,0,0);
+  const pattern=g.createPattern(noise,"repeat"); g.fillStyle=pattern; g.fillRect(0,0,W,H);
+  g.restore();
 
-  // Energy particles orbiting the sphere
-  const particles = Array.from({length:40},()=>({
-    lat:(Math.random()-0.5)*Math.PI,
-    lon:Math.random()*Math.PI*2,
-    speed:(Math.random()-0.5)*0.012,
-    r:0.6+Math.random()*1.2,
-    a:0.4+Math.random()*0.5
-  }));
-
-  // Arc lightning — random energy arcs between two sphere points
-  const arcs=[];
-  function spawnArc(){
-    arcs.push({
-      lat1:(Math.random()-0.5)*Math.PI, lon1:Math.random()*Math.PI*2,
-      lat2:(Math.random()-0.5)*Math.PI, lon2:Math.random()*Math.PI*2,
-      life:1.0, decay:0.03+Math.random()*0.04
-    });
-  }
-  setInterval(spawnArc, 800);
-  spawnArc(); spawnArc();
-
-  let rotY=0, frame=0;
-
-  // Project lat/lon onto canvas
-  function proj(lat,lon){
-    const l=lon+rotY;
-    return {
-      x: CX+R*Math.cos(lat)*Math.sin(l),
-      y: CY-R*Math.sin(lat)*0.95,
-      z: Math.cos(lat)*Math.cos(l)
-    };
-  }
-
-  // Draw one ring tilted at angles a,b
-  function drawRing(ring, col, alpha){
-    const steps=120;
-    const pts=[];
-    for(let i=0;i<=steps;i++){
-      const a=i/steps*Math.PI*2+ring.phase;
-      // Tilt in 3D: rotate around X by ring.a, Y by ring.b
-      const x0=Math.cos(a)*ring.r;
-      const y0=Math.sin(a)*ring.r;
-      const z0=0;
-      const ca=Math.cos(ring.a), sa=Math.sin(ring.a);
-      const cb=Math.cos(ring.b), sb=Math.sin(ring.b);
-      const y1=y0*ca-z0*sa, z1=y0*sa+z0*ca;
-      const x2=x0*cb+z1*sb, z2=-x0*sb+z1*cb;
-      pts.push({x:CX+x2, y:CY+y1, z:z2});
+  const cloudCanvas=document.createElement("canvas"); cloudCanvas.width=W; cloudCanvas.height=H;
+  const c=cloudCanvas.getContext("2d");
+  for(let i=0;i<110;i++){
+    const x=Math.random()*W, y=Math.random()*H, length=50+Math.random()*190;
+    c.save(); c.translate(x,y); c.rotate((Math.random()-.5)*.8);
+    for(let j=0;j<9;j++){
+      const offset=j*length/9; const alpha=.025+Math.random()*.055;
+      c.strokeStyle=`rgba(255,255,255,${alpha})`; c.lineWidth=5+Math.random()*13;
+      c.beginPath(); c.moveTo(-length/2+offset,-10);
+      c.bezierCurveTo(-length/4+offset,-35,length/4+offset,30,length/2+offset,0); c.stroke();
     }
-    ctx.save();
-    ctx.setLineDash(ring.dash);
-    // Draw only front-facing segments
-    for(let i=0;i<steps;i++){
-      const p1=pts[i], p2=pts[i+1];
-      const avg=(p1.z+p2.z)/2;
-      const segAlpha=alpha*Math.max(0,(avg/ring.r+0.5)*0.7);
-      if(segAlpha<0.01) continue;
-      ctx.beginPath();
-      ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y);
-      ctx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},${segAlpha.toFixed(2)})`;
-      ctx.lineWidth=ring.lw;
-      ctx.stroke();
+    c.restore();
+  }
+  for(let i=0;i<65;i++){
+    const x=Math.random()*W, y=Math.random()*H, radius=15+Math.random()*75;
+    c.save(); c.translate(x,y); c.rotate(Math.random()*Math.PI*2);
+    const grad=c.createRadialGradient(0,0,2,0,0,radius);
+    grad.addColorStop(0,"rgba(255,255,255,.17)"); grad.addColorStop(.5,"rgba(255,255,255,.07)"); grad.addColorStop(1,"rgba(255,255,255,0)");
+    c.fillStyle=grad; c.beginPath(); c.ellipse(0,0,radius,radius*.32,0,0,Math.PI*2); c.fill(); c.restore();
+  }
+  for(let i=0;i<1200;i++){
+    const x=Math.random()*W, y=Math.random()*H;
+    c.strokeStyle=`rgba(255,255,255,${Math.random()*.1})`; c.lineWidth=1+Math.random()*4;
+    c.beginPath(); c.moveTo(x,y); c.quadraticCurveTo(x+Math.random()*35,y-10+Math.random()*20,x+Math.random()*70,y+Math.random()*15); c.stroke();
+  }
+
+  const earthTexture=new THREE.CanvasTexture(mapCanvas);
+  earthTexture.colorSpace=THREE.SRGBColorSpace;
+  earthTexture.anisotropy=rendererAnisotropy();
+  const cloudTexture=new THREE.CanvasTexture(cloudCanvas);
+  cloudTexture.colorSpace=THREE.SRGBColorSpace;
+  cloudTexture.anisotropy=rendererAnisotropy();
+  return {earthTexture,cloudTexture};
+}
+
+// ── THREE.JS INIT ────────────────────────────────────────────
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x03060b);
+const camera=new THREE.PerspectiveCamera(36,1,.1,100);
+camera.position.set(0,0,7.0);
+
+const renderer=new THREE.WebGLRenderer({canvas:threeCanvas,antialias:true,alpha:false,powerPreference:"high-performance"});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,CONFIG.maxPixelRatio));
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+
+function rendererAnisotropy(){ return renderer.capabilities.getMaxAnisotropy(); }
+
+const earthGroup=new THREE.Group(); scene.add(earthGroup);
+const R=CONFIG.earthRadius;
+
+const textures=createEarthTextures();
+
+const earth=new THREE.Mesh(
+  new THREE.SphereGeometry(R,160,128),
+  new THREE.MeshPhongMaterial({map:textures.earthTexture,shininess:24,specular:new THREE.Color(0x4b729d)})
+);
+earthGroup.add(earth);
+
+const clouds=new THREE.Mesh(
+  new THREE.SphereGeometry(R*1.009,128,128),
+  new THREE.MeshPhongMaterial({map:textures.cloudTexture,transparent:true,opacity:.52,depthWrite:false,blending:THREE.NormalBlending})
+);
+earthGroup.add(clouds);
+
+const atmosphereMaterial=new THREE.ShaderMaterial({
+  uniforms:{uColor:{value:new THREE.Color(0x269fff)},uIntensity:{value:.9}},
+  vertexShader:`varying vec3 vNormal;varying vec3 vView;void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);vNormal=normalize(normalMatrix*normal);vView=normalize(-mv.xyz);gl_Position=projectionMatrix*mv;}`,
+  fragmentShader:`uniform vec3 uColor;uniform float uIntensity;varying vec3 vNormal;varying vec3 vView;void main(){float fresnel=pow(1.0-max(dot(normalize(vNormal),normalize(vView)),0.0),2.6);gl_FragColor=vec4(uColor,fresnel*uIntensity);}`,
+  transparent:true,side:THREE.BackSide,blending:THREE.AdditiveBlending,depthWrite:false
+});
+const atmosphere=new THREE.Mesh(new THREE.SphereGeometry(R*1.09,128,128),atmosphereMaterial);
+earthGroup.add(atmosphere);
+
+scene.add(new THREE.AmbientLight(0x8399c5,.8));
+const sunlight=new THREE.DirectionalLight(0xffffff,2.1); sunlight.position.set(-3,2,5); scene.add(sunlight);
+const blueLight=new THREE.PointLight(0x178dff,2.8,10); blueLight.position.set(2,-1,3); scene.add(blueLight);
+
+const gridGroup=new THREE.Group(); earthGroup.add(gridGroup);
+const gridMaterial=new THREE.LineBasicMaterial({color:0x52caff,transparent:true,opacity:.19,blending:THREE.AdditiveBlending});
+function addGridLine(points){ const geo=new THREE.BufferGeometry().setFromPoints(points); gridGroup.add(new THREE.Line(geo,gridMaterial)); }
+function geoPoint(lat,lon){ const phi=(90-lat)*Math.PI/180,theta=lon*Math.PI/180; return new THREE.Vector3(R*1.014*Math.sin(phi)*Math.cos(theta),R*1.014*Math.cos(phi),R*1.014*Math.sin(phi)*Math.sin(theta)); }
+for(let lat=-75;lat<=75;lat+=15){ const pts=[]; for(let lon=0;lon<=360;lon+=3) pts.push(geoPoint(lat,lon)); addGridLine(pts); }
+for(let lon=0;lon<360;lon+=15){ const pts=[]; for(let lat=-90;lat<=90;lat+=3) pts.push(geoPoint(lat,lon)); addGridLine(pts); }
+
+const nodes=[],positions=[],nodeCount=CONFIG.nodeCount;
+for(let i=0;i<nodeCount;i++){
+  const y=1-2*i/(nodeCount-1),radius=Math.sqrt(1-y*y),angle=i*Math.PI*(3-Math.sqrt(5));
+  const p=new THREE.Vector3(Math.cos(angle)*radius*R*1.02,y*R*1.02,Math.sin(angle)*radius*R*1.02);
+  positions.push(p);
+  const node=new THREE.Mesh(new THREE.SphereGeometry(i%9===0?.016:.009,8,8),new THREE.MeshBasicMaterial({color:0x63dfff,transparent:true,opacity:.8}));
+  node.position.copy(p); node.userData.phase=Math.random()*Math.PI*2; earthGroup.add(node); nodes.push(node);
+}
+const connectionData=[];
+for(let i=0;i<nodeCount;i++){
+  const nearby=[];
+  for(let j=i+1;j<nodeCount;j++){ const distance=positions[i].distanceTo(positions[j]); if(distance<.48) nearby.push({j,distance}); }
+  nearby.sort((a,b)=>a.distance-b.distance);
+  nearby.slice(0,3).forEach(n=>{ connectionData.push(positions[i].x,positions[i].y,positions[i].z,positions[n.j].x,positions[n.j].y,positions[n.j].z); });
+}
+const connectionGeometry=new THREE.BufferGeometry(); connectionGeometry.setAttribute("position",new THREE.Float32BufferAttribute(connectionData,3));
+const networkMaterial=new THREE.LineBasicMaterial({color:0x36bfff,transparent:true,opacity:.2,blending:THREE.AdditiveBlending});
+earthGroup.add(new THREE.LineSegments(connectionGeometry,networkMaterial));
+
+const particleCount=280,particleData=new Float32Array(particleCount*3),particleVelocity=[];
+for(let i=0;i<particleCount;i++){
+  const y=Math.random()*2-1,angle=Math.random()*Math.PI*2,r=Math.sqrt(1-y*y),radius=R*(1.03+Math.random()*.035);
+  particleData[i*3]=Math.cos(angle)*r*radius; particleData[i*3+1]=y*radius; particleData[i*3+2]=Math.sin(angle)*r*radius;
+  particleVelocity.push(.2+Math.random()*.8);
+}
+const particleGeometry=new THREE.BufferGeometry(); particleGeometry.setAttribute("position",new THREE.BufferAttribute(particleData,3));
+const particleMaterial=new THREE.PointsMaterial({color:0x65dfff,size:.018,transparent:true,opacity:.8,blending:THREE.AdditiveBlending,depthWrite:false});
+earthGroup.add(new THREE.Points(particleGeometry,particleMaterial));
+
+const orbitalGroup=new THREE.Group(); scene.add(orbitalGroup);
+function createRing(radius,tube,color,rotation){
+  const mesh=new THREE.Mesh(new THREE.TorusGeometry(radius,tube,6,256),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.72,blending:THREE.AdditiveBlending}));
+  mesh.rotation.set(...rotation); orbitalGroup.add(mesh); return mesh;
+}
+const rings=[createRing(1.67,.005,0x37caff,[0,0,0]),createRing(1.82,.003,0x8ae8ff,[.8,.2,.5]),createRing(1.98,.006,0x168bff,[1.1,.6,.9]),createRing(2.12,.003,0x397dbb,[.3,.9,.2])];
+
+const hudGroup=new THREE.Group(); scene.add(hudGroup);
+function createArc(radius,start,end,color){
+  const pts=[]; for(let i=0;i<=120;i++){ const a=start+(end-start)*i/120; pts.push(new THREE.Vector3(Math.cos(a)*radius,Math.sin(a)*radius,0)); }
+  const geo=new THREE.BufferGeometry().setFromPoints(pts);
+  const mesh=new THREE.Line(geo,new THREE.LineBasicMaterial({color,transparent:true,opacity:.8,blending:THREE.AdditiveBlending}));
+  hudGroup.add(mesh); return mesh;
+}
+createArc(2.22,-2.7,.4,0x38bfff); createArc(2.22,.8,2.35,0x8beaff); createArc(2.29,-.6,.35,0x4a9fd2); createArc(2.29,2.6,3.7,0x2189d8);
+
+const rippleGroup=new THREE.Group(); scene.add(rippleGroup);
+const ripples=[];
+function createRipple(){
+  const mesh=new THREE.Mesh(new THREE.TorusGeometry(1,.009,6,160),new THREE.MeshBasicMaterial({color:0x74edff,transparent:true,opacity:.8,blending:THREE.AdditiveBlending,depthWrite:false}));
+  rippleGroup.add(mesh); ripples.push({mesh,age:0,life:1.6});
+}
+function updateRipples(dt){
+  for(let i=ripples.length-1;i>=0;i--){
+    const r=ripples[i]; r.age+=dt;
+    const p=Math.min(r.age/r.life,1),s=.1+p*2.8;
+    r.mesh.scale.set(s,s,1); r.mesh.material.opacity=(1-p)*.7;
+    if(p>=1){ rippleGroup.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose(); ripples.splice(i,1); }
+  }
+}
+
+function resize(){
+  width=root.clientWidth; height=root.clientHeight;
+  pixelRatio=Math.min(devicePixelRatio||1,2);
+  hudCanvas.width=width*pixelRatio; hudCanvas.height=height*pixelRatio;
+  hud.setTransform(pixelRatio,0,0,pixelRatio,0,0);
+  renderer.setSize(width,height,false);
+  camera.aspect=width/height;
+  camera.position.z=width<600?7.8:7.0;
+  camera.updateProjectionMatrix();
+}
+const resizeObserver=new ResizeObserver(resize); resizeObserver.observe(root); resize();
+
+function drawHUD(time){
+  hud.clearRect(0,0,width,height);
+  const cx=width/2,cy=height/2,scale=Math.min(width,height)/5.2;
+  hud.save(); hud.translate(cx,cy); hud.scale(scale,scale);
+  const listening=currentState==="listening",speaking=currentState==="speaking";
+  hud.setLineDash([.008,.06]); hud.lineWidth=.003; hud.strokeStyle="rgba(90,190,255,.25)";
+  [2.02,2.2,2.38].forEach(r=>{ hud.beginPath(); hud.arc(0,0,r,0,Math.PI*2); hud.stroke(); });
+  hud.setLineDash([]);
+  const segments=[{r:1.94,s:.045,c:"#46caff"},{r:2.08,s:-.028,c:"#b3edff"},{r:2.3,s:.015,c:"#368dca"}];
+  segments.forEach((ring,i)=>{
+    hud.save(); hud.rotate(time*ring.s*(listening?2.5:1));
+    for(let j=0;j<36;j++){
+      const a=j/36*Math.PI*2,length=j%3===0?.09:.035;
+      hud.beginPath(); hud.moveTo(Math.cos(a)*ring.r,Math.sin(a)*ring.r); hud.lineTo(Math.cos(a)*(ring.r+length),Math.sin(a)*(ring.r+length));
+      hud.strokeStyle=ring.c; hud.globalAlpha=j%3===0?.85:.35; hud.lineWidth=.008; hud.stroke();
     }
-    ctx.setLineDash([]);
-    ctx.restore();
-    ring.phase+=ring.speed;
+    hud.restore();
+  });
+  hud.globalAlpha=1;
+  for(let i=0;i<360;i++){
+    const a=i*Math.PI/180,major=i%10===0,r1=2.42,r2=r1+(major?.075:.023);
+    hud.beginPath(); hud.moveTo(Math.cos(a)*r1,Math.sin(a)*r1); hud.lineTo(Math.cos(a)*r2,Math.sin(a)*r2);
+    hud.strokeStyle=major?"rgba(190,235,255,.9)":"rgba(65,155,210,.35)"; hud.lineWidth=major?.009:.004; hud.stroke();
   }
-
-  // Draw a data fragment label on a ring
-  function drawFrag(frag, ring, col){
-    frag.t+=frag.speed;
-    const a=frag.t;
-    const ca=Math.cos(ring.a), sa=Math.sin(ring.a);
-    const cb=Math.cos(ring.b), sb=Math.sin(ring.b);
-    const x0=Math.cos(a)*ring.r, y0=Math.sin(a)*ring.r;
-    const y1=y0*ca, z1=y0*sa;
-    const x2=x0*cb+z1*sb, z2=-x0*sb+z1*cb;
-    const depth=(z2/ring.r+0.5);
-    if(depth<0.2) return;
-    const px=CX+x2, py=CY+y1;
-    ctx.font=`bold ${Math.round(7+depth*3)}px 'Orbitron',monospace`;
-    ctx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},${(depth*0.9).toFixed(2)})`;
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(frag.label, px, py);
-  }
-
-  function draw(){
-    frame++;
-    ctx.clearRect(0,0,W,H);
-
-    const sc=stateColors();
-    const col=sc.pri, col2=sc.sec;
-    const glow=sc.glow;
-    const speed = globeState==='idle'?0.003:globeState==='thinking'?0.016:globeState==='speaking'?0.006:0.009;
-    const pulse  = 1+0.15*Math.sin(frame*(globeState==='thinking'?0.22:0.07));
-    rotY+=speed;
-
-    // ── Background sphere fill ────────────────────────────────
-    ctx.save();
-    ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2); ctx.clip();
-    const bg=ctx.createRadialGradient(CX-R*0.3,CY-R*0.3,R*0.05, CX,CY,R);
-    bg.addColorStop(0,  `rgba(${col[0]},${col[1]},${col[2]},0.18)`);
-    bg.addColorStop(0.3,`rgba(${col2[0]},${col2[1]},${col2[2]},0.07)`);
-    bg.addColorStop(0.7,'rgba(4,8,20,0.92)');
-    bg.addColorStop(1,  'rgba(2,4,12,0.98)');
-    ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
-
-    // Grid lat lines (ellipses)
-    gridLat.forEach(lat=>{
-      const yp=CY-R*Math.sin(lat)*0.95;
-      const rx=R*Math.cos(lat);
-      if(rx<2) return;
-      ctx.beginPath(); ctx.ellipse(CX,yp,rx,rx*0.12,0,0,Math.PI*2);
-      ctx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},0.08)`;
-      ctx.lineWidth=0.5; ctx.stroke();
-    });
-
-    // Grid lon lines
-    gridLon.forEach(lon=>{
-      const cosL=Math.cos(lon+rotY);
-      if(cosL<-0.05) return;
-      const a=Math.max(0,cosL)*0.10;
-      ctx.beginPath();
-      for(let s=0;s<=32;s++){
-        const lat=(s/32)*Math.PI-Math.PI/2;
-        const p=proj(lat,lon);
-        s===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);
-      }
-      ctx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},${a})`;
-      ctx.lineWidth=0.5; ctx.stroke();
-    });
-
-    // Particles (flowing energy on sphere)
-    particles.forEach(p=>{
-      p.lon+=p.speed*pulse;
-      const pt=proj(p.lat,p.lon);
-      if(pt.z<0) return;
-      const fade=pt.z*p.a;
-      // Trail
-      const tLon=p.lon-p.speed*12;
-      const tr=proj(p.lat,tLon);
-      if(tr.z>0){
-        ctx.beginPath(); ctx.moveTo(tr.x,tr.y); ctx.lineTo(pt.x,pt.y);
-        ctx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},${(fade*0.25).toFixed(2)})`;
-        ctx.lineWidth=0.7; ctx.stroke();
-      }
-      ctx.beginPath(); ctx.arc(pt.x,pt.y,p.r*(0.4+pt.z*0.6),0,Math.PI*2);
-      ctx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},${fade.toFixed(2)})`; ctx.fill();
-    });
-
-    // Lightning arcs between two sphere points
-    for(let i=arcs.length-1;i>=0;i--){
-      const arc=arcs[i];
-      arc.life-=arc.decay;
-      if(arc.life<=0){ arcs.splice(i,1); continue; }
-      const p1=proj(arc.lat1,arc.lon1+rotY*0.3);
-      const p2=proj(arc.lat2,arc.lon2+rotY*0.3);
-      if(p1.z<0||p2.z<0) continue;
-      const mx=(p1.x+p2.x)/2+(Math.random()-0.5)*20;
-      const my=(p1.y+p2.y)/2+(Math.random()-0.5)*20;
-      ctx.beginPath();
-      ctx.moveTo(p1.x,p1.y); ctx.quadraticCurveTo(mx,my,p2.x,p2.y);
-      ctx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},${(arc.life*0.5).toFixed(2)})`;
-      ctx.lineWidth=0.8; ctx.stroke();
+  function gauge(radius,start,end,count,color,phase){
+    for(let i=0;i<count;i++){
+      const a=start+(end-start)*i/count,active=(i/count)<(.65+.12*Math.sin(time*1.3+phase));
+      hud.beginPath(); hud.arc(0,0,radius,a,a+(end-start)/count*.7);
+      hud.strokeStyle=active?color:"rgba(40,95,140,.25)"; hud.lineWidth=.022; hud.shadowColor=color; hud.shadowBlur=active?9:0; hud.stroke();
     }
-
-    ctx.restore(); // end sphere clip
-
-    // ── Glowing core ─────────────────────────────────────────
-    const corePulse=pulse*(globeState==='thinking'?1.3:1);
-    const core=ctx.createRadialGradient(CX,CY,0,CX,CY,R*0.38*corePulse);
-    core.addColorStop(0,  `rgba(${col[0]},${col[1]},${col[2]},0.55)`);
-    core.addColorStop(0.3,`rgba(${col[0]},${col[1]},${col[2]},0.18)`);
-    core.addColorStop(0.7,`rgba(${col2[0]},${col2[1]},${col2[2]},0.06)`);
-    core.addColorStop(1,  'rgba(0,0,0,0)');
-    ctx.save(); ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2); ctx.clip();
-    ctx.fillStyle=core; ctx.fillRect(0,0,W,H);
-    ctx.restore();
-
-    // ── Outer glow rim ────────────────────────────────────────
-    const rimAlpha=globeState==='idle'?0.10:0.28;
-    const rim=ctx.createRadialGradient(CX,CY,R-10,CX,CY,R+18);
-    rim.addColorStop(0,  glow+'0)');
-    rim.addColorStop(0.4,glow+(rimAlpha*pulse).toFixed(2)+')');
-    rim.addColorStop(1,  glow+'0)');
-    ctx.beginPath(); ctx.arc(CX,CY,R+9,0,Math.PI*2);
-    ctx.strokeStyle=rim; ctx.lineWidth=18; ctx.stroke();
-
-    // Hard rim line
-    ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2);
-    ctx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},${(0.35*pulse).toFixed(2)})`;
-    ctx.lineWidth=1.5; ctx.stroke();
-
-    // ── Orbital rings (outside sphere clip) ─────────────────
-    const ringAlpha = globeState==='idle'?0.55:0.75;
-    rings.forEach((ring,i)=>{
-      drawRing(ring, i%2===0?col:col2, ringAlpha*pulse);
-    });
-
-    // ── Orbiting data fragments ──────────────────────────────
-    dataFrags.forEach((frag,i)=>{
-      drawFrag(frag, rings[frag.ring], i%2===0?col:col2);
-    });
-
-    // ── Specular highlight (top-left) ────────────────────────
-    ctx.save(); ctx.beginPath(); ctx.arc(CX,CY,R,0,Math.PI*2); ctx.clip();
-    const spec=ctx.createRadialGradient(CX-R*0.35,CY-R*0.35,2,CX-R*0.25,CY-R*0.25,R*0.45);
-    spec.addColorStop(0,'rgba(255,255,255,0.18)');
-    spec.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle=spec; ctx.fillRect(0,0,W,H); ctx.restore();
-
-    // ── Wide ambient glow behind globe ───────────────────────
-    const ambient=ctx.createRadialGradient(CX,CY,R*0.7,CX,CY,R*2.0);
-    ambient.addColorStop(0, glow+(0.04*pulse).toFixed(3)+')');
-    ambient.addColorStop(1, glow+'0)');
-    ctx.fillStyle=ambient; ctx.fillRect(0,0,W,H);
-
-    requestAnimationFrame(draw);
+    hud.shadowBlur=0;
   }
-  draw();
+  gauge(2.49,-1.3,1.3,56,"#4ad5ff",0); gauge(2.49,1.8,4.3,56,"#8ceaff",2);
+  for(let i=0;i<4;i++){
+    const a=i*Math.PI/2+time*(listening?.65:.15)*(i%2?-1:1);
+    const x1=Math.cos(a)*1.45,y1=Math.sin(a)*1.45,x2=Math.cos(a)*2.5,y2=Math.sin(a)*2.5;
+    const gradient=hud.createLinearGradient(x1,y1,x2,y2);
+    gradient.addColorStop(0,"rgba(0,190,255,0)"); gradient.addColorStop(1,"rgba(120,240,255,.8)");
+    hud.beginPath(); hud.moveTo(x1,y1); hud.lineTo(x2,y2); hud.strokeStyle=gradient; hud.lineWidth=.009; hud.stroke();
+  }
+  for(let i=0;i<24;i++){
+    const a=i*Math.PI/12+time*.025,r=2.04+.045*Math.sin(time*2+i);
+    hud.beginPath(); hud.arc(Math.cos(a)*r,Math.sin(a)*r,.016,0,Math.PI*2);
+    hud.fillStyle=i%4===0?"#f3d48c":"#65dfff"; hud.shadowColor="#55dfff"; hud.shadowBlur=12; hud.fill();
+  }
+  hud.shadowBlur=0;
+  if(listening){
+    const pulse=.5+.5*Math.sin(time*6);
+    hud.beginPath(); hud.arc(0,0,1.62+.035*pulse,0,Math.PI*2);
+    hud.strokeStyle=`rgba(140,250,255,${.5+.4*pulse})`; hud.lineWidth=.02; hud.shadowColor="#5cefff"; hud.shadowBlur=25; hud.stroke(); hud.shadowBlur=0;
+  }
+  if(speaking){
+    for(let i=0;i<4;i++){
+      const p=(time*.65+i*.25)%1,r=.75+p*1.85;
+      hud.beginPath(); hud.arc(0,0,r,0,Math.PI*2); hud.strokeStyle=`rgba(70,225,255,${(1-p)*.48})`; hud.lineWidth=.012; hud.stroke();
+    }
+  }
+  hud.restore();
+}
+
+window.globeSetState=function(nextState){
+  if(!["idle","listening","speaking"].includes(nextState)){ console.warn("JARVIS: Invalid globe state."); return; }
+  currentState=nextState;
+};
+window.globeSetIdle=()=>globeSetState("idle");
+window.globeSetListening=()=>globeSetState("listening");
+window.globeSetSpeaking=()=>globeSetState("speaking");
+
+function animate(now){
+  if(destroyed)return;
+  frameId=requestAnimationFrame(animate);
+  const dt=Math.min((now-lastTime)/1000||0,.04); lastTime=now; elapsed+=dt;
+  const settings=CONFIG.states[currentState];
+  earth.rotation.y+=settings.speed*dt;
+  clouds.rotation.y+=settings.speed*1.18*dt;
+  earthGroup.rotation.x=Math.sin(elapsed*.09)*.025;
+  rings[0].rotation.z+=dt*.12; rings[1].rotation.z-=dt*.075; rings[2].rotation.z+=dt*.045; rings[3].rotation.z-=dt*.025;
+  hudGroup.rotation.z+=dt*.008;
+  const breathing=1+.012*Math.sin(elapsed*1.5);
+  atmosphere.scale.setScalar(breathing*(currentState==="listening"?1.035:1));
+  atmosphereMaterial.uniforms.uColor.value.setHex(settings.colour);
+  atmosphereMaterial.uniforms.uIntensity.value=settings.glow*(.9+.1*Math.sin(elapsed*1.8));
+  gridMaterial.color.setHex(settings.colour); networkMaterial.color.setHex(settings.colour);
+  networkMaterial.opacity=currentState==="listening"?.48:.22;
+  nodes.forEach(node=>{
+    const pulse=Math.sin(elapsed*(currentState==="listening"?5:2)+node.userData.phase);
+    node.scale.setScalar(1+pulse*(currentState==="listening"?.4:.16));
+    node.material.opacity=.65+pulse*.18; node.material.color.setHex(settings.colour);
+  });
+  const particlePositions=particleGeometry.attributes.position.array;
+  for(let i=0;i<particleCount;i++){
+    const idx=i*3,x=particlePositions[idx],z=particlePositions[idx+2];
+    const speed=particleVelocity[i]*dt*(currentState==="listening"?2.8:1)*.18;
+    particlePositions[idx]=x*Math.cos(speed)-z*Math.sin(speed); particlePositions[idx+2]=x*Math.sin(speed)+z*Math.cos(speed);
+  }
+  particleGeometry.attributes.position.needsUpdate=true;
+  blueLight.intensity=currentState==="listening"?5:currentState==="speaking"?4:2.8;
+  clouds.material.opacity=currentState==="listening"?.65:.52;
+  particleMaterial.opacity=currentState==="listening"?1:.8;
+  if(currentState==="speaking"){ rippleTimer+=dt; if(rippleTimer>.55){ createRipple(); rippleTimer=0; } } else { rippleTimer=0; }
+  updateRipples(dt);
+  drawHUD(elapsed);
+  renderer.render(scene,camera);
+}
+
+window.destroyJarvisGlobe=function(){
+  destroyed=true; cancelAnimationFrame(frameId); resizeObserver.disconnect();
+  scene.traverse(obj=>{ if(obj.geometry)obj.geometry.dispose(); if(obj.material){ if(Array.isArray(obj.material)) obj.material.forEach(m=>m.dispose()); else obj.material.dispose(); } });
+  textures.earthTexture.dispose(); textures.cloudTexture.dispose(); renderer.dispose();
+};
+
+resize();
+frameId=requestAnimationFrame(animate);
+
 })();
 
 // ── HELPERS ──────────────────────────────────────────────────
