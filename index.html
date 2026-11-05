@@ -2115,6 +2115,72 @@ function closeSitePanel() {
   document.getElementById('sitePanelOverlay').style.display = 'none';
 }
 
+// ── PRODUCT FOLDER CREATOR ────────────────────────────────────
+function updatePhotoLabel() {
+  var input = document.getElementById('folderPhotosInput');
+  var label = document.getElementById('photoPickerLabel');
+  var count = input.files ? input.files.length : 0;
+  label.textContent = count > 0 ? '📷 ' + count + ' photo' + (count > 1 ? 's' : '') + ' selected' : '📷 TAP TO SELECT PHOTOS';
+}
+
+function createProductFolder() {
+  var name = (document.getElementById('folderNameInput').value || '').trim();
+  var input = document.getElementById('folderPhotosInput');
+  var statusEl = document.getElementById('folderStatus');
+  var btn = document.getElementById('createFolderBtn');
+
+  if (!name) {
+    statusEl.style.color = '#f87171';
+    statusEl.textContent = 'Please enter a folder name.';
+    return;
+  }
+
+  var files = input.files ? Array.from(input.files) : [];
+  statusEl.style.color = 'rgba(180,190,210,0.7)';
+  statusEl.textContent = 'Creating folder' + (files.length > 0 ? ' and uploading ' + files.length + ' photo(s)…' : '…');
+  btn.disabled = true;
+
+  // Convert all images to base64 then POST to backend
+  var promises = files.map(function(file) {
+    return new Promise(function(resolve) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var b64 = e.target.result.split(',')[1];
+        resolve({ name: file.name, type: file.type, data: b64 });
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  Promise.all(promises).then(function(images) {
+    fetch(JARVIS_BACKEND, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'createProductFolder', folderName: name, images: images })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false;
+      if (data && data.success) {
+        statusEl.style.color = '#4ade80';
+        statusEl.textContent = '✓ Folder created' + (data.uploaded > 0 ? ' with ' + data.uploaded + ' photo(s)' : '') + '!';
+        document.getElementById('folderNameInput').value = '';
+        document.getElementById('folderPhotosInput').value = '';
+        document.getElementById('photoPickerLabel').textContent = '📷 TAP TO SELECT PHOTOS';
+        speak('Product folder created for ' + name);
+      } else {
+        statusEl.style.color = '#f87171';
+        statusEl.textContent = 'Error: ' + (data && data.message ? data.message : 'Unknown error');
+      }
+    })
+    .catch(function(err) {
+      btn.disabled = false;
+      statusEl.style.color = '#f87171';
+      statusEl.textContent = 'Connection error. Try again.';
+    });
+  });
+}
+
 // ── SYSTEM DIAGNOSTICS ────────────────────────────────────────
 var diagReport = '';
 
@@ -2263,9 +2329,28 @@ function copyDiagnostics() {
       <div id="siteInstruction" style="font-size:13px;color:rgba(180,190,210,0.7);margin-bottom:20px;line-height:1.6;padding:0 8px;"></div>
 
       <!-- Pending products queue -->
-      <div id="pendingProductsSection" style="margin-bottom:8px;text-align:left;">
+      <div id="pendingProductsSection" style="margin-bottom:20px;text-align:left;">
         <div style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;color:#d4af37;margin-bottom:8px;">📦 PRODUCT QUEUE</div>
         <div id="pendingProductsList" style="font-size:12px;color:rgba(180,190,210,0.6);font-style:italic;">Loading…</div>
+      </div>
+
+      <!-- Divider -->
+      <div style="border-top:1px solid rgba(212,175,55,0.15);margin-bottom:20px;"></div>
+
+      <!-- Product folder creator -->
+      <div style="text-align:left;">
+        <div style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;color:#d4af37;margin-bottom:12px;">🗂️ CREATE PRODUCT FOLDER</div>
+        <input id="folderNameInput" type="text" placeholder="e.g. 2018 Volvo FMX 440"
+          style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.05);border:1px solid rgba(212,175,55,0.3);border-radius:8px;padding:10px 12px;color:#e8eaf0;font-family:'Rajdhani',sans-serif;font-size:14px;margin-bottom:10px;outline:none;">
+        <label style="display:block;background:rgba(255,255,255,0.04);border:1px dashed rgba(0,212,255,0.4);border-radius:8px;padding:12px;text-align:center;cursor:pointer;margin-bottom:10px;">
+          <span id="photoPickerLabel" style="font-size:12px;color:rgba(0,212,255,0.8);">📷 TAP TO SELECT PHOTOS</span>
+          <input id="folderPhotosInput" type="file" accept="image/*" multiple style="display:none;" onchange="updatePhotoLabel()">
+        </label>
+        <button onclick="createProductFolder()" id="createFolderBtn"
+          style="width:100%;font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:2px;padding:12px;background:rgba(212,175,55,0.1);border:1px solid rgba(212,175,55,0.5);border-radius:8px;color:#d4af37;cursor:pointer;">
+          ✦ CREATE FOLDER
+        </button>
+        <div id="folderStatus" style="font-size:12px;color:rgba(180,190,210,0.6);margin-top:8px;min-height:18px;text-align:center;"></div>
       </div>
     </div>
 
