@@ -635,6 +635,101 @@ var jarvisUserName = 'Johan';
 var jarvisUserTitle = 'sir';
 var jarvisUserEmail = 'johan@brisksure.co.za';
 
+// ── LIVE SYSTEM ALERTS — shared fetch used at login and by the polling loop ──
+var _lastAlertSnapshot = null;   // JSON string of last known alert set
+var _liveAlertTimer    = null;   // handle for the polling interval
+
+function _fetchSystemAlerts() {
+  return Promise.all([
+    callBackend('getStock').catch(function(){ return null; }),
+    callBackend('getPendingAds').catch(function(){ return null; }),
+    (function(){
+      return new Promise(function(resolve) {
+        var cbName = 'jarvisCb_valBrief_' + Date.now();
+        var script = document.createElement('script');
+        var t = setTimeout(function(){ delete window[cbName]; script.remove(); resolve(null); }, 15000);
+        window[cbName] = function(d){ clearTimeout(t); delete window[cbName]; script.remove(); resolve(d); };
+        script.onerror = function(){ clearTimeout(t); delete window[cbName]; script.remove(); resolve(null); };
+        script.src = VALUATION_BACKEND + '?action=getValuations&callback=' + cbName;
+        document.head.appendChild(script);
+      });
+    })(),
+    callBackend('getPendingMatches').catch(function(){ return null; }),
+    callBackend('getLeads').catch(function(){ return null; })
+  ]).then(function(results) {
+    var stockData = results[0], adsData = results[1], valData = results[2],
+        matchData = results[3], leadsData = results[4];
+    var alerts = [];
+
+    // 1. New / pending-review stock
+    if (stockData && !stockData.error && stockData.items) {
+      var newStock = stockData.items.filter(function(i){
+        var s = (i.status || '').toLowerCase();
+        return s === 'new' || s === 'pending review';
+      });
+      if (newStock.length > 0)
+        alerts.push('📦 ' + newStock.length + ' new stock item' + (newStock.length > 1 ? 's' : '') + ' pending review — latest: ' + (newStock[0].year + ' ' + newStock[0].make + ' ' + newStock[0].model).trim());
+    }
+
+    // 2. Pending ads
+    if (adsData && adsData.ads && adsData.ads.length > 0)
+      alerts.push('📢 ' + adsData.ads.length + ' ad' + (adsData.ads.length > 1 ? 's' : '') + ' ready and waiting to be posted');
+
+    // 3. Pending valuation requests
+    if (valData && valData.valuations && valData.valuations.length > 0)
+      alerts.push('🏷️ ' + valData.valuations.length + ' valuation request' + (valData.valuations.length > 1 ? 's' : '') + ' outstanding — open the Valuations panel to review');
+
+    // 4. Buyer-stock matches
+    if (matchData && matchData.matches && matchData.matches.length > 0)
+      alerts.push('🎯 ' + matchData.matches.length + ' buyer match' + (matchData.matches.length > 1 ? 'es' : '') + ' detected — check your email for details');
+
+    // 5. Today's new leads
+    if (leadsData && !leadsData.error && leadsData.leads) {
+      var todayLeads = leadsData.leads.filter(function(l){ return l.isToday; });
+      if (todayLeads.length > 0)
+        alerts.push('📋 ' + todayLeads.length + ' new lead' + (todayLeads.length > 1 ? 's' : '') + ' submitted today');
+    }
+
+    return alerts;
+  });
+}
+
+// ── LIVE POLLING — runs every 3 minutes while logged in ──────────────────────
+function _startLiveAlertPolling() {
+  if (_liveAlertTimer) return;   // already running
+  _liveAlertTimer = setInterval(function() {
+    _fetchSystemAlerts().then(function(alerts) {
+      var snapshot = JSON.stringify(alerts);
+      if (snapshot === _lastAlertSnapshot) return;   // nothing changed — stay quiet
+
+      var prev = _lastAlertSnapshot ? JSON.parse(_lastAlertSnapshot) : [];
+      _lastAlertSnapshot = snapshot;
+
+      // Work out what's genuinely new since last check
+      var newAlerts = alerts.filter(function(a){ return prev.indexOf(a) === -1; });
+      if (newAlerts.length === 0) return;   // only removals — no need to interrupt
+
+      // Update the notification badge on the alert button (if present)
+      var badge = document.getElementById('alertBadge');
+      if (badge) {
+        badge.textContent = alerts.length;
+        badge.style.display = alerts.length > 0 ? 'flex' : 'none';
+      }
+
+      // Speak the new items — queued so it won't interrupt active speech mid-sentence
+      var msg = newAlerts.length === 1
+        ? jarvisUserTitle + ', new update: ' + newAlerts[0].replace(/^[^\s]+\s/, '')
+        : jarvisUserTitle + ', ' + newAlerts.length + ' new updates: ' + newAlerts.map(function(a){ return a.replace(/^[^\s]+\s/, ''); }).join('. ');
+      speak(msg);
+
+      // Also update the response panel so it's visible on screen
+      document.getElementById('responseBody').textContent =
+        '🔔 Live update — ' + newAlerts.length + ' new item' + (newAlerts.length > 1 ? 's' : '') + ':\n\n' + newAlerts.join('\n');
+
+    }).catch(function(){ /* silent — network blip, try again next interval */ });
+  }, 3 * 60 * 1000);   // every 3 minutes
+}
+
 function setUser(user) {
   jarvisUser = user;
   if (user === 'luanne') {
@@ -652,65 +747,9 @@ function setUser(user) {
   document.getElementById('responseBody').textContent = greeting;
   speak(greeting);
 
-  // ── STARTUP BRIEFING — fetch all connected systems and report what's outstanding ──
-  Promise.all([
-    callBackend('getStock').catch(function(){ return null; }),
-    callBackend('getPendingAds').catch(function(){ return null; }),
-    (function(){
-      return new Promise(function(resolve) {
-        var cbName = 'jarvisCb_valBrief_' + Date.now();
-        var script = document.createElement('script');
-        var t = setTimeout(function(){ delete window[cbName]; script.remove(); resolve(null); }, 15000);
-        window[cbName] = function(d){ clearTimeout(t); delete window[cbName]; script.remove(); resolve(d); };
-        script.onerror = function(){ clearTimeout(t); delete window[cbName]; script.remove(); resolve(null); };
-        script.src = VALUATION_BACKEND + '?action=getValuations&callback=' + cbName;
-        document.head.appendChild(script);
-      });
-    })(),
-    callBackend('getPendingMatches').catch(function(){ return null; }),
-    callBackend('getLeads').catch(function(){ return null; })
-  ]).then(function(results) {
-    var stockData    = results[0];
-    var adsData      = results[1];
-    var valData      = results[2];
-    var matchData    = results[3];
-    var leadsData    = results[4];
-
-    var alerts = [];
-
-    // 1. New / pending-review stock
-    if (stockData && !stockData.error && stockData.items) {
-      var newStock = stockData.items.filter(function(i){
-        var s = (i.status || '').toLowerCase();
-        return s === 'new' || s === 'pending review';
-      });
-      if (newStock.length > 0) {
-        alerts.push('📦 ' + newStock.length + ' new stock item' + (newStock.length > 1 ? 's' : '') + ' pending review — latest: ' + (newStock[0].year + ' ' + newStock[0].make + ' ' + newStock[0].model).trim());
-      }
-    }
-
-    // 2. Pending ads (written but not yet cleared)
-    if (adsData && adsData.ads && adsData.ads.length > 0) {
-      alerts.push('📢 ' + adsData.ads.length + ' ad' + (adsData.ads.length > 1 ? 's' : '') + ' ready and waiting to be posted');
-    }
-
-    // 3. Pending valuation requests
-    if (valData && valData.valuations && valData.valuations.length > 0) {
-      alerts.push('🏷️ ' + valData.valuations.length + ' valuation request' + (valData.valuations.length > 1 ? 's' : '') + ' outstanding — open the Valuations panel to review');
-    }
-
-    // 4. Buyer-stock matches waiting
-    if (matchData && matchData.matches && matchData.matches.length > 0) {
-      alerts.push('🎯 ' + matchData.matches.length + ' buyer match' + (matchData.matches.length > 1 ? 'es' : '') + ' detected — check your email for details');
-    }
-
-    // 5. Today's new leads
-    if (leadsData && !leadsData.error && leadsData.leads) {
-      var todayLeads = leadsData.leads.filter(function(l){ return l.isToday; });
-      if (todayLeads.length > 0) {
-        alerts.push('📋 ' + todayLeads.length + ' new lead' + (todayLeads.length > 1 ? 's' : '') + ' submitted today');
-      }
-    }
+  // ── STARTUP BRIEFING ─────────────────────────────────────────
+  _fetchSystemAlerts().then(function(alerts) {
+    _lastAlertSnapshot = JSON.stringify(alerts);   // seed the snapshot so first poll only alerts on NEW items
 
     var briefText;
     if (alerts.length === 0) {
@@ -718,13 +757,17 @@ function setUser(user) {
     } else {
       briefText = 'Good ' + tod + ', ' + jarvisUserTitle + '. Systems checked. ' + alerts.length + ' item' + (alerts.length > 1 ? 's' : '') + ' need' + (alerts.length === 1 ? 's' : '') + ' your attention:\n\n' + alerts.join('\n');
     }
-
     document.getElementById('responseBody').textContent = briefText;
     speak(briefText);
+
+    // Start the live polling loop now that we have a baseline snapshot
+    _startLiveAlertPolling();
+
   }).catch(function() {
     var fallback = 'Good ' + tod + ', ' + jarvisUserTitle + '. Ready to get started — could not reach all systems right now.';
     document.getElementById('responseBody').textContent = fallback;
     speak(fallback);
+    _startLiveAlertPolling();   // still start polling even if startup fetch failed
   });
 }
 
