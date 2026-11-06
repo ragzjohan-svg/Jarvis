@@ -2200,10 +2200,11 @@ function openAdsPanel() {
     var html = '';
     data.ads.forEach(function(a, i) {
       var adId = 'ad-text-' + i;
-      html += '<div style="margin-bottom:24px;border:1px solid #00d4ff33;border-radius:10px;overflow:hidden;">';
-      html += '<div style="background:#00d4ff22;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">';
-      html += '<span style="color:#00d4ff;font-weight:700;font-size:0.85rem;">' + a.title + '</span>';
-      html += '<button onclick="copyAd(\'' + adId + '\')" style="background:#00d4ff;border:none;border-radius:6px;padding:5px 12px;color:#000;font-weight:700;font-size:0.75rem;cursor:pointer;">COPY</button>';
+      html += '<div id="ad-card-' + i + '" style="margin-bottom:24px;border:1px solid #00d4ff33;border-radius:10px;overflow:hidden;">';
+      html += '<div style="background:#00d4ff22;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;">';
+      html += '<span style="color:#00d4ff;font-weight:700;font-size:0.85rem;flex:1;">' + a.title + '</span>';
+      html += '<button onclick="copyAd(\'' + adId + '\')" style="background:#00d4ff;border:none;border-radius:6px;padding:5px 12px;color:#000;font-weight:700;font-size:0.75rem;cursor:pointer;white-space:nowrap;">COPY</button>';
+      html += '<button onclick="clearOneAd(' + i + ')" style="background:rgba(231,76,60,0.15);border:1px solid #e74c3c88;border-radius:6px;padding:5px 10px;color:#e74c3c;font-weight:700;font-size:0.75rem;cursor:pointer;white-space:nowrap;">🗑 DONE</button>';
       html += '</div>';
       if (a.watermarkedFolderUrl) {
         html += '<div style="padding:8px 14px;background:#0d1a0d;border-bottom:1px solid #00d4ff22;">';
@@ -2224,6 +2225,22 @@ function openAdsPanel() {
 
 function closeAdsPanel() {
   document.getElementById('adsPanelOverlay').style.display = 'none';
+}
+
+function clearOneAd(index) {
+  var card = document.getElementById('ad-card-' + index);
+  if (card) card.style.opacity = '0.4';
+  callBackend('removeOneAd', { index: index }).then(function() {
+    if (card) card.remove();
+    // If no cards left, show empty state
+    var remaining = document.querySelectorAll('[id^="ad-card-"]');
+    if (remaining.length === 0) {
+      document.getElementById('adsPanelContent').innerHTML =
+        '<p style="color:#aaa;text-align:center;padding:20px;">✅ All ads done. New ads will appear here when the next stock comes in.</p>';
+    }
+  }).catch(function() {
+    if (card) card.style.opacity = '1';
+  });
 }
 
 function clearAllAds() {
