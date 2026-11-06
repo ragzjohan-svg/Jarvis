@@ -2516,28 +2516,28 @@ function copyDiagnostics() {
   </div>
 </div>
 <!-- ── VALUATIONS PANEL OVERLAY ── -->
-<div id="valuationsPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px 0 32px;">
-  <div style="background:#0d1120;border:1px solid rgba(212,175,55,0.3);border-radius:16px;padding:22px;width:95%;max-width:520px;margin:auto;box-shadow:0 0 50px rgba(212,175,55,0.08);">
+<div id="valuationsPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1120;border:1px solid rgba(212,175,55,0.3);border-radius:16px;width:95%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(212,175,55,0.08);">
 
-    <!-- Header -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
-      <div>
-        <div style="font-family:'Orbitron',sans-serif;font-size:0.85rem;color:#d4af37;letter-spacing:3px;">🏷️ VALUATION REQUESTS</div>
-        <div id="valCountLabel" style="font-size:0.75rem;color:#64748b;margin-top:3px;"></div>
+    <!-- Fixed header -->
+    <div style="padding:18px 20px 14px;flex-shrink:0;border-bottom:1px solid rgba(212,175,55,0.12);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:0.85rem;color:#d4af37;letter-spacing:3px;">🏷️ VALUATION REQUESTS</div>
+          <div id="valCountLabel" style="font-size:0.75rem;color:#64748b;margin-top:3px;"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="loadValuations()" title="Refresh" style="background:rgba(212,175,55,0.08);border:1px solid rgba(212,175,55,0.25);color:#d4af37;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:0.75rem;font-family:'Orbitron',sans-serif;letter-spacing:1px;">↺</button>
+          <button onclick="closeValuationsPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button onclick="loadValuations()" title="Refresh" style="background:rgba(212,175,55,0.08);border:1px solid rgba(212,175,55,0.25);color:#d4af37;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:0.75rem;font-family:'Orbitron',sans-serif;letter-spacing:1px;">↺</button>
-        <button onclick="closeValuationsPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+      <div style="font-size:0.72rem;color:#64748b;line-height:1.5;">
+        📋 <span style="color:#00d4ff;">Copy Info</span> — paste into Claude &nbsp;|&nbsp; 📞 <span style="color:#00d4ff;">Copy Cell</span> — open WhatsApp &nbsp;|&nbsp; ✅ <span style="color:#22c55e;">Done</span> — removes from list
       </div>
     </div>
 
-    <!-- Valuation URL hint -->
-    <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.15);border-radius:9px;padding:11px 14px;margin-bottom:16px;font-size:0.75rem;color:#64748b;line-height:1.5;">
-      📋 <span style="color:#00d4ff;">Copy Info</span> — paste into Claude to get valuation PNG &nbsp;|&nbsp; 📞 <span style="color:#00d4ff;">Copy Cell</span> — open WhatsApp to send valuation
-    </div>
-
-    <!-- Content area -->
-    <div id="valuationsContent"></div>
+    <!-- Scrollable content area -->
+    <div id="valuationsContent" style="overflow-y:auto;padding:14px 16px 16px;flex:1;min-height:0;"></div>
 
   </div>
 </div>
@@ -2710,6 +2710,11 @@ function renderValCard(v, idx) {
   ].filter(function(l) { return l !== undefined; }).join('\n');
 
   var cardId = 'valCard_' + idx;
+  var rowIndex = v.row_index || '';
+
+  // Store copy text safely in a global map keyed by idx
+  if (!window._valCopyData) window._valCopyData = {};
+  window._valCopyData[idx] = copyText;
 
   return '<div id="' + cardId + '" style="background:#111827;border:1px solid rgba(212,175,55,0.18);border-radius:12px;padding:16px;margin-bottom:12px;">' +
 
@@ -2734,33 +2739,72 @@ function renderValCard(v, idx) {
 
     // Action buttons
     '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
-      '<button onclick="copyValInfo(\'' + cardId + '\', ' + JSON.stringify(copyText).replace(/'/g,"&#39;") + ')" style="flex:1;min-width:130px;padding:9px 10px;border-radius:8px;border:1px solid rgba(212,175,55,0.35);background:rgba(212,175,55,0.07);color:#d4af37;font-family:\'Orbitron\',sans-serif;font-size:0.65rem;letter-spacing:1.5px;cursor:pointer;" id="copyInfoBtn_' + idx + '">📋 COPY INFO</button>' +
-      '<button onclick="copyValCell(\'' + cell + '\', ' + idx + ')" style="flex:1;min-width:130px;padding:9px 10px;border-radius:8px;border:1px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.07);color:#00d4ff;font-family:\'Orbitron\',sans-serif;font-size:0.65rem;letter-spacing:1.5px;cursor:pointer;" id="copyCellBtn_' + idx + '">📞 COPY CELL</button>' +
+      '<button onclick="copyValInfo(' + idx + ')" style="flex:1;min-width:110px;padding:9px 10px;border-radius:8px;border:1px solid rgba(212,175,55,0.35);background:rgba(212,175,55,0.07);color:#d4af37;font-family:\'Orbitron\',sans-serif;font-size:0.65rem;letter-spacing:1.5px;cursor:pointer;" id="copyInfoBtn_' + idx + '">📋 COPY INFO</button>' +
+      '<button onclick="copyValCell(\'' + escHtml(cell) + '\', ' + idx + ')" style="flex:1;min-width:110px;padding:9px 10px;border-radius:8px;border:1px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.07);color:#00d4ff;font-family:\'Orbitron\',sans-serif;font-size:0.65rem;letter-spacing:1.5px;cursor:pointer;" id="copyCellBtn_' + idx + '">📞 COPY CELL</button>' +
+      '<button onclick="markValDone(\'' + cardId + '\', ' + rowIndex + ')" style="padding:9px 12px;border-radius:8px;border:1px solid rgba(34,197,94,0.3);background:rgba(34,197,94,0.07);color:#22c55e;font-family:\'Orbitron\',sans-serif;font-size:0.65rem;letter-spacing:1.5px;cursor:pointer;" id="doneBtn_' + idx + '">✅ DONE</button>' +
     '</div>' +
 
   '</div>';
 }
 
-function copyValInfo(cardId, text) {
-  var btn = document.getElementById(cardId).querySelector('[id^="copyInfoBtn"]');
+function copyValInfo(idx) {
+  var text = (window._valCopyData && window._valCopyData[idx]) ? window._valCopyData[idx] : '';
+  var btn = document.getElementById('copyInfoBtn_' + idx);
   var original = btn ? btn.textContent : '';
-  navigator.clipboard.writeText(text).then(function() {
+
+  function onSuccess() {
     if (btn) { btn.textContent = '✅ COPIED!'; btn.style.borderColor = 'rgba(34,197,94,0.5)'; btn.style.color = '#22c55e'; }
     setTimeout(function() {
       if (btn) { btn.textContent = original; btn.style.borderColor = ''; btn.style.color = ''; }
     }, 2500);
-  }).catch(function() {
-    // Fallback: select hidden textarea
+  }
+
+  function fallback() {
     var ta = document.createElement('textarea');
     ta.value = text;
-    ta.style.cssText = 'position:fixed;opacity:0;';
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
     document.body.appendChild(ta);
+    ta.focus();
     ta.select();
-    try { document.execCommand('copy'); } catch(e) {}
+    try { document.execCommand('copy'); onSuccess(); } catch(e) {}
     document.body.removeChild(ta);
-    if (btn) { btn.textContent = '✅ COPIED'; btn.style.color = '#22c55e'; }
-    setTimeout(function() { if (btn) { btn.textContent = original; btn.style.color = ''; } }, 2500);
-  });
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onSuccess).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+function markValDone(cardId, rowIndex) {
+  var card = document.getElementById(cardId);
+  if (!card) return;
+
+  // Visually remove immediately
+  card.style.transition = 'opacity 0.3s';
+  card.style.opacity = '0.3';
+  card.style.pointerEvents = 'none';
+
+  setTimeout(function() {
+    card.remove();
+    // Update count label
+    var remaining = document.querySelectorAll('#valuationsContent [id^="valCard_"]').length;
+    var label = document.getElementById('valCountLabel');
+    if (label) label.textContent = remaining + ' request' + (remaining !== 1 ? 's' : '');
+    if (remaining === 0) {
+      document.getElementById('valuationsContent').innerHTML = renderValEmpty('All done! No pending valuation requests.');
+    }
+  }, 300);
+
+  // Update sheet status in background (silent — no spinner)
+  if (rowIndex && VALUATION_BACKEND && VALUATION_BACKEND !== 'YOUR_VALUATION_GAS_WEBAPP_URL_HERE') {
+    var cbName = 'doneCb_' + Date.now();
+    window[cbName] = function() { delete window[cbName]; };
+    var script = document.createElement('script');
+    script.src = VALUATION_BACKEND + '?action=updateStatus&rowIndex=' + rowIndex + '&status=Done&callback=' + cbName;
+    document.head.appendChild(script);
+  }
 }
 
 function copyValCell(cellNum, idx) {
