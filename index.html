@@ -665,7 +665,7 @@ function _fetchSystemAlerts() {
     if (stockData && !stockData.error && stockData.items) {
       var newStock = stockData.items.filter(function(i){
         var s = (i.status || '').toLowerCase();
-        return s === 'new' || s === 'pending review';
+        return s === 'new' || s === 'pending review'; // 'reviewed' and 'sold' are excluded
       });
       if (newStock.length > 0)
         alerts.push('📦 ' + newStock.length + ' new stock item' + (newStock.length > 1 ? 's' : '') + ' pending review — latest: ' + (newStock[0].year + ' ' + newStock[0].make + ' ' + newStock[0].model).trim());
@@ -1906,7 +1906,7 @@ function buildFallbackAnswer(text, leadsData, ctData, finData, stockData) {
   // Stock
   if (/stock|intake|vehicle|machinery/.test(t) && stockData && !stockData.error) {
     var items = stockData.items || [];
-    var pending = items.filter(function(i){ return i.status.toLowerCase()==='new'||i.status.toLowerCase()==='pending review'; });
+    var pending = items.filter(function(i){ var s=i.status.toLowerCase(); return s==='new'||s==='pending review'; }); // 'reviewed' and 'sold' excluded
     return 'Stock intake has ' + stockData.total + ' items on file, with ' + pending.length + ' pending review.';
   }
   // Financials
@@ -2098,7 +2098,7 @@ function handleCommand(text){
     }
     if(stockData && !stockData.error && stockData.items){
       var items = stockData.items||[];
-      var newItems = items.filter(function(i){ return i.status.toLowerCase()==='new'||i.status.toLowerCase()==='pending review'; });
+      var newItems = items.filter(function(i){ var s=i.status.toLowerCase(); return s==='new'||s==='pending review'; }); // 'reviewed' and 'sold' excluded
       sys += 'STOCK INTAKE: total='+stockData.total+' pending_review='+newItems.length+'\n';
       sys += 'ITEMS (newest first — seller | make | model | category | status | date):\n';
       sys += items.map(function(i){
