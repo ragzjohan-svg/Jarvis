@@ -2205,6 +2205,11 @@ function openAdsPanel() {
       html += '<span style="color:#00d4ff;font-weight:700;font-size:0.85rem;">' + a.title + '</span>';
       html += '<button onclick="copyAd(\'' + adId + '\')" style="background:#00d4ff;border:none;border-radius:6px;padding:5px 12px;color:#000;font-weight:700;font-size:0.75rem;cursor:pointer;">COPY</button>';
       html += '</div>';
+      if (a.watermarkedFolderUrl) {
+        html += '<div style="padding:8px 14px;background:#0d1a0d;border-bottom:1px solid #00d4ff22;">';
+        html += '<a href="' + a.watermarkedFolderUrl + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:rgba(0,180,80,0.14);border:1px solid #00b45088;color:#00e676;text-decoration:none;border-radius:6px;padding:5px 14px;font-size:0.75rem;font-weight:700;letter-spacing:1px;">📷 VIEW WATERMARKED PHOTOS</a>';
+        html += '</div>';
+      }
       html += '<textarea id="' + adId + '" readonly style="width:100%;min-height:280px;background:#0d0d1a;color:#eee;border:none;padding:12px 14px;font-size:0.78rem;line-height:1.6;resize:vertical;font-family:monospace;box-sizing:border-box;">' + a.ad + '</textarea>';
       html += '</div>';
     });
