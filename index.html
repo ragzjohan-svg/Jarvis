@@ -2217,14 +2217,38 @@ function openAdsPanel() {
     html += '<div style="text-align:center;margin-top:8px;">';
     html += '<button onclick="clearAllAds()" style="font-family:\'Orbitron\',sans-serif;font-size:11px;letter-spacing:2px;padding:10px 28px;background:rgba(231,76,60,0.12);border:1px solid #e74c3c88;color:#e74c3c;border-radius:6px;cursor:pointer;">🗑 CLEAR ALL ADS</button>';
     html += '</div>';
+    _adCurrentIndex = 0;
     content.innerHTML = html;
+    _adUpdateNav();
   }).catch(function() {
     content.innerHTML = '<p style="color:#e74c3c;text-align:center;padding:20px;">Could not load ads. Please try again.</p>';
   });
 }
 
+var _adCurrentIndex = 0;
+
 function closeAdsPanel() {
   document.getElementById('adsPanelOverlay').style.display = 'none';
+  document.getElementById('adNavUp').style.display   = 'none';
+  document.getElementById('adNavDown').style.display = 'none';
+}
+
+function _adUpdateNav() {
+  var cards = document.querySelectorAll('[id^="ad-card-"]');
+  var total = cards.length;
+  document.getElementById('adNavUp').style.display   = total > 1 ? 'block' : 'none';
+  document.getElementById('adNavDown').style.display = total > 1 ? 'block' : 'none';
+  var counter = document.getElementById('adNavCounter');
+  if (counter) counter.textContent = total > 1 ? (_adCurrentIndex + 1) + ' / ' + total : '';
+}
+
+function adNavScroll(dir) {
+  var cards = document.querySelectorAll('[id^="ad-card-"]');
+  var total = cards.length;
+  if (total === 0) return;
+  _adCurrentIndex = (_adCurrentIndex + dir + total) % total;
+  cards[_adCurrentIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  _adUpdateNav();
 }
 
 function clearOneAd(index) {
@@ -2232,11 +2256,16 @@ function clearOneAd(index) {
   if (card) card.style.opacity = '0.4';
   callBackend('removeOneAd', { index: index }).then(function() {
     if (card) card.remove();
-    // If no cards left, show empty state
     var remaining = document.querySelectorAll('[id^="ad-card-"]');
     if (remaining.length === 0) {
       document.getElementById('adsPanelContent').innerHTML =
         '<p style="color:#aaa;text-align:center;padding:20px;">✅ All ads done. New ads will appear here when the next stock comes in.</p>';
+      document.getElementById('adNavUp').style.display   = 'none';
+      document.getElementById('adNavDown').style.display = 'none';
+      document.getElementById('adNavCounter').textContent = '';
+    } else {
+      _adCurrentIndex = Math.min(_adCurrentIndex, remaining.length - 1);
+      _adUpdateNav();
     }
   }).catch(function() {
     if (card) card.style.opacity = '1';
@@ -2692,9 +2721,14 @@ function copyDiagnostics() {
 
 <!-- ── ADS PANEL OVERLAY ── -->
 <div id="adsPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0;">
+  <!-- Up arrow — fixed to top-centre of overlay -->
+  <button id="adNavUp" onclick="adNavScroll(-1)" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) translateY(-260px);z-index:10001;background:rgba(0,212,255,0.15);border:1px solid #00d4ff66;border-radius:50%;width:44px;height:44px;color:#00d4ff;font-size:1.3rem;cursor:pointer;line-height:1;">▲</button>
+  <!-- Down arrow -->
+  <button id="adNavDown" onclick="adNavScroll(1)" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) translateY(260px);z-index:10001;background:rgba(0,212,255,0.15);border:1px solid #00d4ff66;border-radius:50%;width:44px;height:44px;color:#00d4ff;font-size:1.3rem;cursor:pointer;line-height:1;">▼</button>
   <div style="background:#1a1a2e;border:1px solid #00d4ff44;border-radius:16px;padding:24px;width:94%;max-width:480px;margin:auto;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
       <span style="color:#00d4ff;font-size:1.1rem;font-weight:700;letter-spacing:1px;">📢 STOCK ADS</span>
+      <span id="adNavCounter" style="color:#aaa;font-size:0.8rem;"></span>
       <button onclick="closeAdsPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
     </div>
     <div id="adsPanelContent"></div>
