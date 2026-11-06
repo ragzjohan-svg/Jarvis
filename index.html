@@ -545,6 +545,7 @@ const COMMANDS = [
   { icon:'📢', text:'ADS',         sub:'Stock ads',        cmd:'__VIEW_ADS__' },
   { icon:'🔧', text:'DIAG',        sub:'System check',     cmd:'__DIAGNOSTICS__' },
   { icon:'🌐', text:'SITE',        sub:'Toggle portal',    cmd:'__TOGGLE_SITE__' },
+  { icon:'🏷️', text:'VALUATIONS', sub:'Requests',         cmd:'__VALUATIONS__' },
 ];
 
 function buildOrbital() {
@@ -611,6 +612,7 @@ function buildOrbital() {
                         cmd.cmd === '__VIEW_ADS__'     ? openAdsPanel()     :
                         cmd.cmd === '__DIAGNOSTICS__'  ? runDiagnostics()   :
                         cmd.cmd === '__TOGGLE_SITE__'  ? toggleSite()       :
+                        cmd.cmd === '__VALUATIONS__'   ? openValuationsPanel() :
                         handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
   });
@@ -2513,6 +2515,33 @@ function copyDiagnostics() {
     </form>
   </div>
 </div>
+<!-- ── VALUATIONS PANEL OVERLAY ── -->
+<div id="valuationsPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px 0 32px;">
+  <div style="background:#0d1120;border:1px solid rgba(212,175,55,0.3);border-radius:16px;padding:22px;width:95%;max-width:520px;margin:auto;box-shadow:0 0 50px rgba(212,175,55,0.08);">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:0.85rem;color:#d4af37;letter-spacing:3px;">🏷️ VALUATION REQUESTS</div>
+        <div id="valCountLabel" style="font-size:0.75rem;color:#64748b;margin-top:3px;"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button onclick="loadValuations()" title="Refresh" style="background:rgba(212,175,55,0.08);border:1px solid rgba(212,175,55,0.25);color:#d4af37;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:0.75rem;font-family:'Orbitron',sans-serif;letter-spacing:1px;">↺</button>
+        <button onclick="closeValuationsPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+      </div>
+    </div>
+
+    <!-- Valuation URL hint -->
+    <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.15);border-radius:9px;padding:11px 14px;margin-bottom:16px;font-size:0.75rem;color:#64748b;line-height:1.5;">
+      📋 <span style="color:#00d4ff;">Copy Info</span> — paste into Claude to get valuation PNG &nbsp;|&nbsp; 📞 <span style="color:#00d4ff;">Copy Cell</span> — open WhatsApp to send valuation
+    </div>
+
+    <!-- Content area -->
+    <div id="valuationsContent"></div>
+
+  </div>
+</div>
+
 <!-- ── WEB RESULTS PANEL ─────────────────────────────────── -->
 <!-- Backdrop (dim only the bottom portion) -->
 <div id="webResultsPanel" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:9998;flex-direction:column;align-items:stretch;height:62vh;background:rgba(2,4,14,0.97);border-top:1px solid rgba(0,160,255,0.35);border-radius:18px 18px 0 0;box-shadow:0 -8px 40px rgba(0,160,255,0.15);">
@@ -2582,6 +2611,178 @@ function closeWebResults() {
 function escHtml(s) {
   if (!s) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── VALUATIONS PANEL ──────────────────────────────────────────────────────
+// Replace with your deployed GAS valuation web app URL after deploying
+var VALUATION_BACKEND = 'https://script.google.com/macros/s/AKfycbzS0ZSa_KkItSObAqw9wp9Lx6SUEf5U3d3t54MpFelunPCvtZ47NJX2Joo8eaVszwfs/exec';
+
+function openValuationsPanel() {
+  var overlay = document.getElementById('valuationsPanelOverlay');
+  overlay.style.display = 'flex';
+  loadValuations();
+}
+
+function closeValuationsPanel() {
+  document.getElementById('valuationsPanelOverlay').style.display = 'none';
+}
+
+function loadValuations() {
+  var content = document.getElementById('valuationsContent');
+  var label   = document.getElementById('valCountLabel');
+  content.innerHTML = '<div style="text-align:center;padding:28px;color:#64748b;font-size:0.85rem;">Loading valuation requests…</div>';
+
+  if (!VALUATION_BACKEND || VALUATION_BACKEND === 'YOUR_VALUATION_GAS_WEBAPP_URL_HERE') {
+    content.innerHTML = renderValEmpty('⚙️ Valuation backend URL not yet configured.<br><br>Deploy the GAS web app and paste its URL into VALUATION_BACKEND in jarvis-standalone.html.');
+    label.textContent = '';
+    return;
+  }
+
+  var cbName = 'valCb_' + Date.now();
+  var timeout = setTimeout(function() {
+    content.innerHTML = renderValEmpty('⚠️ Could not load valuation requests. Check your GAS deployment.');
+    label.textContent = '';
+    if (window[cbName]) delete window[cbName];
+  }, 12000);
+
+  window[cbName] = function(data) {
+    clearTimeout(timeout);
+    delete window[cbName];
+    if (!data || !data.success) {
+      content.innerHTML = renderValEmpty('⚠️ ' + (data && data.error ? data.error : 'Failed to load.'));
+      label.textContent = '';
+      return;
+    }
+    var vals = data.valuations || [];
+    label.textContent = vals.length + ' request' + (vals.length !== 1 ? 's' : '');
+    if (!vals.length) {
+      content.innerHTML = renderValEmpty('No valuation requests yet.<br>Share your free valuation form link to start receiving submissions.');
+      return;
+    }
+    content.innerHTML = vals.map(function(v, idx) { return renderValCard(v, idx); }).join('');
+  };
+
+  var script = document.createElement('script');
+  script.src = VALUATION_BACKEND + '?action=getValuations&callback=' + cbName;
+  document.head.appendChild(script);
+}
+
+function renderValEmpty(msg) {
+  return '<div style="text-align:center;padding:32px 20px;color:#64748b;font-size:0.85rem;line-height:1.6;">' + msg + '</div>';
+}
+
+function renderValCard(v, idx) {
+  var ts       = v['timestamp'] || '';
+  var status   = v['status'] || 'New';
+  var name     = v['owner_name'] || v['owner name'] || '—';
+  var cell     = v['cell_number'] || v['cell number'] || '—';
+  var category = v['category'] || '';
+  var make     = v['make'] || '';
+  var model    = v['model'] || '';
+  var year     = v['year'] || '';
+  var km       = v['kilometres_/_hours'] || v['kilometres'] || '';
+  var cond     = v['condition'] || '';
+  var details  = v['extra_details'] || v['extra details'] || '';
+  var wantsIva = v['wants_iva_to_sell'] || v['wants iva to sell'] || '';
+  var province = v['province'] || '';
+
+  var statusColor = status === 'Done' ? '#22c55e' : status === 'In Progress' ? '#f59e0b' : '#d4af37';
+
+  // Build copy info text
+  var copyText = [
+    '=== IVA VALUATION REQUEST ===',
+    'Date: ' + ts,
+    'Owner: ' + name,
+    'Cell: ' + cell,
+    (province ? 'Province: ' + province : ''),
+    '',
+    'VEHICLE DETAILS',
+    'Category: ' + category,
+    'Make: ' + make,
+    'Model: ' + model,
+    'Year: ' + year,
+    (km ? 'Kilometres/Hours: ' + km : ''),
+    'Condition: ' + cond,
+    (details ? 'Additional Details: ' + details : ''),
+    '',
+    'Wants IVA to Sell: ' + (wantsIva || 'No'),
+    '==========================='
+  ].filter(function(l) { return l !== undefined; }).join('\n');
+
+  var cardId = 'valCard_' + idx;
+
+  return '<div id="' + cardId + '" style="background:#111827;border:1px solid rgba(212,175,55,0.18);border-radius:12px;padding:16px;margin-bottom:12px;">' +
+
+    // Status + date
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+      '<span style="font-family:\'Orbitron\',sans-serif;font-size:0.6rem;letter-spacing:2px;color:' + statusColor + ';border:1px solid ' + statusColor + '44;padding:3px 10px;border-radius:50px;">' + escHtml(status) + '</span>' +
+      '<span style="font-size:0.72rem;color:#64748b;">' + escHtml(ts) + '</span>' +
+    '</div>' +
+
+    // Owner + vehicle title
+    '<div style="font-size:1rem;font-weight:600;color:#e2e8f0;margin-bottom:2px;">' + escHtml(name) + '</div>' +
+    '<div style="font-size:0.85rem;color:#d4af37;font-weight:500;margin-bottom:10px;">' + escHtml(year + ' ' + make + ' ' + model) + (category ? ' <span style="color:#64748b;font-size:0.75rem;">— ' + escHtml(category) + '</span>' : '') + '</div>' +
+
+    // Details grid
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:0.78rem;color:#94a3b8;margin-bottom:12px;">' +
+      (km       ? '<div>🛣 <span style="color:#c8d0e0;">' + escHtml(km) + '</span></div>' : '') +
+      (province ? '<div>📍 <span style="color:#c8d0e0;">' + escHtml(province) + '</span></div>' : '') +
+      (cond     ? '<div style="grid-column:1/-1;">🔧 ' + escHtml(cond.split('—')[0].trim()) + '</div>' : '') +
+      (details  ? '<div style="grid-column:1/-1;color:#94a3b8;font-style:italic;">"' + escHtml(details.substring(0, 120)) + (details.length > 120 ? '…' : '') + '"</div>' : '') +
+      (wantsIva === 'Yes' ? '<div style="grid-column:1/-1;color:#22c55e;">✅ Wants IVA to sell</div>' : '') +
+    '</div>' +
+
+    // Action buttons
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+      '<button onclick="copyValInfo(\'' + cardId + '\', ' + JSON.stringify(copyText).replace(/'/g,"&#39;") + ')" style="flex:1;min-width:130px;padding:9px 10px;border-radius:8px;border:1px solid rgba(212,175,55,0.35);background:rgba(212,175,55,0.07);color:#d4af37;font-family:\'Orbitron\',sans-serif;font-size:0.65rem;letter-spacing:1.5px;cursor:pointer;" id="copyInfoBtn_' + idx + '">📋 COPY INFO</button>' +
+      '<button onclick="copyValCell(\'' + cell + '\', ' + idx + ')" style="flex:1;min-width:130px;padding:9px 10px;border-radius:8px;border:1px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.07);color:#00d4ff;font-family:\'Orbitron\',sans-serif;font-size:0.65rem;letter-spacing:1.5px;cursor:pointer;" id="copyCellBtn_' + idx + '">📞 COPY CELL</button>' +
+    '</div>' +
+
+  '</div>';
+}
+
+function copyValInfo(cardId, text) {
+  var btn = document.getElementById(cardId).querySelector('[id^="copyInfoBtn"]');
+  var original = btn ? btn.textContent : '';
+  navigator.clipboard.writeText(text).then(function() {
+    if (btn) { btn.textContent = '✅ COPIED!'; btn.style.borderColor = 'rgba(34,197,94,0.5)'; btn.style.color = '#22c55e'; }
+    setTimeout(function() {
+      if (btn) { btn.textContent = original; btn.style.borderColor = ''; btn.style.color = ''; }
+    }, 2500);
+  }).catch(function() {
+    // Fallback: select hidden textarea
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    if (btn) { btn.textContent = '✅ COPIED'; btn.style.color = '#22c55e'; }
+    setTimeout(function() { if (btn) { btn.textContent = original; btn.style.color = ''; } }, 2500);
+  });
+}
+
+function copyValCell(cellNum, idx) {
+  var btn = document.getElementById('copyCellBtn_' + idx);
+  var original = btn ? btn.textContent : '';
+  var clean = cellNum.replace(/\s/g, '');
+  navigator.clipboard.writeText(clean).then(function() {
+    if (btn) { btn.textContent = '✅ ' + clean; btn.style.borderColor = 'rgba(34,197,94,0.5)'; btn.style.color = '#22c55e'; }
+    setTimeout(function() {
+      if (btn) { btn.textContent = original; btn.style.borderColor = ''; btn.style.color = ''; }
+    }, 2500);
+  }).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = clean;
+    ta.style.cssText = 'position:fixed;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    if (btn) { btn.textContent = '✅ COPIED'; btn.style.color = '#22c55e'; }
+    setTimeout(function() { if (btn) { btn.textContent = original; btn.style.color = ''; } }, 2500);
+  });
 }
 </script>
 </body>
