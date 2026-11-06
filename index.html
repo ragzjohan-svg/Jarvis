@@ -648,9 +648,84 @@ function setUser(user) {
   }
   document.getElementById('userSelectOverlay').style.display = 'none';
   var tod = getTimeOfDay();
-  var greeting = 'Good ' + tod + ', ' + jarvisUserTitle + '. Ready to get started when you are — where do we start in this session?';
+  var greeting = 'Good ' + tod + ', ' + jarvisUserTitle + '. Checking all systems — stand by.';
   document.getElementById('responseBody').textContent = greeting;
   speak(greeting);
+
+  // ── STARTUP BRIEFING — fetch all connected systems and report what's outstanding ──
+  Promise.all([
+    callBackend('getStock').catch(function(){ return null; }),
+    callBackend('getPendingAds').catch(function(){ return null; }),
+    (function(){
+      return new Promise(function(resolve) {
+        var cbName = 'jarvisCb_valBrief_' + Date.now();
+        var script = document.createElement('script');
+        var t = setTimeout(function(){ delete window[cbName]; script.remove(); resolve(null); }, 15000);
+        window[cbName] = function(d){ clearTimeout(t); delete window[cbName]; script.remove(); resolve(d); };
+        script.onerror = function(){ clearTimeout(t); delete window[cbName]; script.remove(); resolve(null); };
+        script.src = VALUATION_BACKEND + '?action=getValuations&callback=' + cbName;
+        document.head.appendChild(script);
+      });
+    })(),
+    callBackend('getPendingMatches').catch(function(){ return null; }),
+    callBackend('getLeads').catch(function(){ return null; })
+  ]).then(function(results) {
+    var stockData    = results[0];
+    var adsData      = results[1];
+    var valData      = results[2];
+    var matchData    = results[3];
+    var leadsData    = results[4];
+
+    var alerts = [];
+
+    // 1. New / pending-review stock
+    if (stockData && !stockData.error && stockData.items) {
+      var newStock = stockData.items.filter(function(i){
+        var s = (i.status || '').toLowerCase();
+        return s === 'new' || s === 'pending review';
+      });
+      if (newStock.length > 0) {
+        alerts.push('📦 ' + newStock.length + ' new stock item' + (newStock.length > 1 ? 's' : '') + ' pending review — latest: ' + (newStock[0].year + ' ' + newStock[0].make + ' ' + newStock[0].model).trim());
+      }
+    }
+
+    // 2. Pending ads (written but not yet cleared)
+    if (adsData && adsData.ads && adsData.ads.length > 0) {
+      alerts.push('📢 ' + adsData.ads.length + ' ad' + (adsData.ads.length > 1 ? 's' : '') + ' ready and waiting to be posted');
+    }
+
+    // 3. Pending valuation requests
+    if (valData && valData.valuations && valData.valuations.length > 0) {
+      alerts.push('🏷️ ' + valData.valuations.length + ' valuation request' + (valData.valuations.length > 1 ? 's' : '') + ' outstanding — open the Valuations panel to review');
+    }
+
+    // 4. Buyer-stock matches waiting
+    if (matchData && matchData.matches && matchData.matches.length > 0) {
+      alerts.push('🎯 ' + matchData.matches.length + ' buyer match' + (matchData.matches.length > 1 ? 'es' : '') + ' detected — check your email for details');
+    }
+
+    // 5. Today's new leads
+    if (leadsData && !leadsData.error && leadsData.leads) {
+      var todayLeads = leadsData.leads.filter(function(l){ return l.isToday; });
+      if (todayLeads.length > 0) {
+        alerts.push('📋 ' + todayLeads.length + ' new lead' + (todayLeads.length > 1 ? 's' : '') + ' submitted today');
+      }
+    }
+
+    var briefText;
+    if (alerts.length === 0) {
+      briefText = 'Good ' + tod + ', ' + jarvisUserTitle + '. All systems clear — nothing outstanding. Ready when you are.';
+    } else {
+      briefText = 'Good ' + tod + ', ' + jarvisUserTitle + '. Systems checked. ' + alerts.length + ' item' + (alerts.length > 1 ? 's' : '') + ' need' + (alerts.length === 1 ? 's' : '') + ' your attention:\n\n' + alerts.join('\n');
+    }
+
+    document.getElementById('responseBody').textContent = briefText;
+    speak(briefText);
+  }).catch(function() {
+    var fallback = 'Good ' + tod + ', ' + jarvisUserTitle + '. Ready to get started — could not reach all systems right now.';
+    document.getElementById('responseBody').textContent = fallback;
+    speak(fallback);
+  });
 }
 
 function checkPin() {
@@ -2322,11 +2397,12 @@ function runDiagnostics() {
   content.textContent = lines.join('\n');
 
   var endpoints = [
-    { name: 'getLeads       ', action: 'getLeads' },
-    { name: 'getContractors ', action: 'getContractors' },
-    { name: 'getStock       ', action: 'getStock' },
-    { name: 'getSummary     ', action: 'getSummary' },
-    { name: 'getDirectory   ', action: 'getDirectory' },
+    { name: 'getLeads       ', action: 'getLeads',        backend: 'main' },
+    { name: 'getContractors ', action: 'getContractors',  backend: 'main' },
+    { name: 'getStock       ', action: 'getStock',        backend: 'main' },
+    { name: 'getSummary     ', action: 'getSummary',      backend: 'main' },
+    { name: 'getDirectory   ', action: 'getDirectory',    backend: 'main' },
+    { name: 'getValuations  ', action: 'getValuations',   backend: 'valuation' },
   ];
 
   var results = [];
@@ -2334,13 +2410,26 @@ function runDiagnostics() {
 
   endpoints.forEach(function(ep) {
     var start = Date.now();
-    var timer = setTimeout(function() {
-      results.push(ep.name + ': ✗ TIMEOUT');
-      checkDone();
-    }, 35000);
 
-    callBackend(ep.action).then(function(data) {
-      clearTimeout(timer);
+    var promise;
+    if (ep.backend === 'valuation') {
+      // Valuation backend uses JSONP — different URL, same pattern as startup briefing
+      promise = new Promise(function(resolve, reject) {
+        var cbName = 'jarvisDiagCb_' + Date.now();
+        var script = document.createElement('script');
+        var t = setTimeout(function() {
+          delete window[cbName]; script.remove(); reject(new Error('timeout'));
+        }, 35000);
+        window[cbName] = function(d) { clearTimeout(t); delete window[cbName]; script.remove(); resolve(d); };
+        script.onerror = function() { clearTimeout(t); delete window[cbName]; script.remove(); reject(new Error('script error')); };
+        script.src = VALUATION_BACKEND + '?action=getValuations&callback=' + cbName;
+        document.head.appendChild(script);
+      });
+    } else {
+      promise = callBackend(ep.action);
+    }
+
+    promise.then(function(data) {
       var ms = Date.now() - start;
       var detail = '';
       if (data && data.error) detail = ' — ERROR: ' + data.error.substring(0, 50);
@@ -2349,11 +2438,12 @@ function runDiagnostics() {
       else if (ep.action === 'getStock' && data) detail = ' — ' + (data.total || 0) + ' items';
       else if (ep.action === 'getSummary' && data && data.summary) detail = ' — income R' + data.summary.income;
       else if (ep.action === 'getDirectory' && data) detail = ' — ' + (data.directory ? data.directory.length : 0) + ' IC codes';
-      results.push(ep.name + ': ✓ OK (' + ms + 'ms)' + detail);
+      else if (ep.action === 'getValuations' && data) detail = ' — ' + (data.valuations ? data.valuations.length : 0) + ' valuations';
+      results.push({ name: ep.name, status: 'OK', ms: ms, detail: detail });
       checkDone();
-    }).catch(function() {
-      clearTimeout(timer);
-      results.push(ep.name + ': ✗ FAILED');
+    }).catch(function(err) {
+      var isTimeout = err && /timeout/i.test(err.message);
+      results.push({ name: ep.name, status: isTimeout ? 'TIMEOUT' : 'FAILED', ms: null, detail: '' });
       checkDone();
     });
   });
@@ -2361,7 +2451,13 @@ function runDiagnostics() {
   function checkDone() {
     pending--;
     var current = lines.slice();
-    results.forEach(function(r) { current.push('  ' + r); });
+    results.forEach(function(r) {
+      if (r.status === 'OK') {
+        current.push('  ' + r.name + ': ✓ OK (' + r.ms + 'ms)' + r.detail);
+      } else {
+        current.push('  ' + r.name + ': ✗ ' + r.status);
+      }
+    });
     if (pending > 0) {
       current.push('  … waiting for ' + pending + ' more');
     } else {
@@ -2369,6 +2465,24 @@ function runDiagnostics() {
       current.push('GEMINI STATUS  : ' + (window._lastGeminiStatus || 'Unknown — run a voice/text query first'));
       current.push('─'.repeat(42));
       current.push('END OF REPORT');
+
+      // ── SPEAK the diagnostic summary aloud ──────────────────
+      // speak() uses only window.speechSynthesis — 100% independent of Gemini API
+      var okCount  = results.filter(function(r){ return r.status === 'OK'; }).length;
+      var total    = results.length;
+      var geminiOk = window._lastGeminiStatus && /^OK/i.test(window._lastGeminiStatus);
+      var spokenSummary =
+        'Diagnostics complete. ' +
+        okCount + ' of ' + total + ' systems online. ' +
+        'Voice engine: ' + (window.speechSynthesis ? 'active' : 'unavailable') + '. ' +
+        'Gemini A I: ' + (geminiOk ? 'OK' : 'unknown — run a query to test') + '.';
+      if (okCount < total) {
+        var failedNames = results
+          .filter(function(r){ return r.status !== 'OK'; })
+          .map(function(r){ return r.name.trim(); });
+        spokenSummary += ' ' + (total - okCount) + ' system(s) did not respond: ' + failedNames.join(', ') + '.';
+      }
+      speak(spokenSummary);
     }
     diagReport = current.join('\n');
     content.textContent = diagReport;
