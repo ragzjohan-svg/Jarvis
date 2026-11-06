@@ -543,7 +543,7 @@ const COMMANDS = [
   { icon:'📅', text:'THIS WEEK',   sub:'Weekly',          cmd:'read me this week leads' },
   { icon:'👥', text:'CONTRACTORS', sub:'All agents',      cmd:'contractor performance' },
   { icon:'🔢', text:'ACTIVE',      sub:'This month',      cmd:'how many contractors this month' },
-  { icon:'🚛', text:'STOCK',       sub:'Intake review',   cmd:'give me an overview of the stock intake' },
+  { icon:'🚛', text:'STOCK',       sub:'Intake review',   cmd:'__STOCK_REVIEW__' },
   { icon:'👤', text:'BUYER',       sub:'Add buyer',        cmd:'__ADD_BUYER__' },
   { icon:'📢', text:'ADS',         sub:'Stock ads',        cmd:'__VIEW_ADS__' },
   { icon:'🔧', text:'DIAG',        sub:'System check',     cmd:'__DIAGNOSTICS__' },
@@ -617,6 +617,7 @@ function buildOrbital() {
                         cmd.cmd === '__DIAGNOSTICS__'  ? runDiagnostics()   :
                         cmd.cmd === '__TOGGLE_SITE__'  ? toggleSite()       :
                         cmd.cmd === '__VALUATIONS__'   ? openValuationsPanel() :
+                        cmd.cmd === '__STOCK_REVIEW__' ? openStockReviewPanel() :
                         handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
   });
@@ -2777,6 +2778,25 @@ function copyDiagnostics() {
     </form>
   </div>
 </div>
+<!-- ── STOCK REVIEW PANEL OVERLAY ── -->
+<div id="stockReviewOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1120;border:1px solid rgba(0,212,255,0.25);border-radius:16px;width:95%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(0,212,255,0.08);">
+    <div style="padding:18px 20px 14px;flex-shrink:0;border-bottom:1px solid rgba(0,212,255,0.12);">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:0.85rem;color:#00d4ff;letter-spacing:3px;">🚛 STOCK REVIEW</div>
+          <div id="stockReviewCount" style="font-size:0.75rem;color:#64748b;margin-top:3px;"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="loadStockReviewPanel()" title="Refresh" style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.25);color:#00d4ff;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:0.75rem;font-family:'Orbitron',sans-serif;letter-spacing:1px;">↺</button>
+          <button onclick="closeStockReviewPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+        </div>
+      </div>
+    </div>
+    <div id="stockReviewContent" style="overflow-y:auto;padding:16px;flex:1;"></div>
+  </div>
+</div>
+
 <!-- ── VALUATIONS PANEL OVERLAY ── -->
 <div id="valuationsPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;padding:16px;">
   <div style="background:#0d1120;border:1px solid rgba(212,175,55,0.3);border-radius:16px;width:95%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(212,175,55,0.08);">
@@ -2884,6 +2904,100 @@ function openValuationsPanel() {
   overlay.style.display = 'flex';
   loadValuations();
 }
+
+// ── STOCK REVIEW PANEL ─────────────────────────────────────────────────────
+var STOCK_REVIEW_URL = 'https://script.google.com/macros/s/AKfycby6yK0Aj8cleY_wWv2_VfCGqTc1Kq1q1lBCT1g5wrLQlVjz_bnfAHcEemofvsN3F67W/exec';
+
+function openStockReviewPanel() {
+  document.getElementById('stockReviewOverlay').style.display = 'flex';
+  loadStockReviewPanel();
+}
+
+function closeStockReviewPanel() {
+  document.getElementById('stockReviewOverlay').style.display = 'none';
+}
+
+function loadStockReviewPanel() {
+  var content = document.getElementById('stockReviewContent');
+  var countEl = document.getElementById('stockReviewCount');
+  content.innerHTML = '<div style="color:#64748b;text-align:center;padding:30px;">Loading...</div>';
+  countEl.textContent = '';
+
+  callBackend('getStock').then(function(data) {
+    if (!data || data.error || !data.items) {
+      content.innerHTML = '<div style="color:#e07070;padding:20px;text-align:center;">Could not load stock. Try again.</div>';
+      return;
+    }
+    var pending = data.items.filter(function(i) {
+      var s = (i.status || '').toLowerCase();
+      return s === 'new' || s === 'pending review';
+    });
+    countEl.textContent = pending.length + ' pending review' + (data.total > pending.length ? ' of ' + data.total + ' total' : '');
+    if (pending.length === 0) {
+      content.innerHTML = '<div style="color:#70e090;text-align:center;padding:30px;">✓ All stock has been reviewed.</div>';
+      return;
+    }
+    var html = '';
+    pending.forEach(function(item, idx) {
+      var price = item.askingPrice ? 'R ' + Number(item.askingPrice).toLocaleString('en-ZA') : '—';
+      html += '<div id="sr-card-' + idx + '" style="background:#111827;border:1px solid rgba(0,212,255,0.18);border-radius:10px;padding:14px;margin-bottom:12px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">';
+      html += '<div>';
+      html += '<div style="color:#fff;font-weight:700;font-size:0.95rem;">' + escHtml((item.year||'') + ' ' + (item.make||'') + ' ' + (item.model||'')) + '</div>';
+      html += '<div style="color:#64748b;font-size:0.78rem;margin-top:3px;">' + escHtml(item.seller||item.sellerName||'') + (item.province ? ' · ' + escHtml(item.province) : '') + '</div>';
+      html += '</div>';
+      html += '<div style="color:#00d4ff;font-weight:700;font-size:0.9rem;white-space:nowrap;">' + escHtml(price) + '</div>';
+      html += '</div>';
+      html += '<div style="font-size:0.75rem;color:#64748b;margin-top:6px;">' + escHtml(item.timestamp||'') + ' · ' + (item.photoCount||0) + ' photos</div>';
+      if (item.watermarkedFolderUrl) {
+        html += '<a href="' + escHtml(item.watermarkedFolderUrl) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;background:rgba(0,180,80,0.12);border:1px solid #00b45066;color:#00e676;text-decoration:none;border-radius:6px;padding:5px 12px;font-size:0.72rem;font-weight:700;letter-spacing:1px;">📷 PHOTOS</a>';
+      }
+      html += '<div style="display:flex;gap:8px;margin-top:10px;">';
+      html += '<button onclick="markStockReviewed(\'' + escHtml(item.itemId) + '\',' + idx + ')" style="flex:1;background:rgba(0,212,255,0.12);border:1px solid #00d4ff66;color:#00d4ff;border-radius:7px;padding:9px;font-size:0.78rem;font-weight:700;letter-spacing:1px;cursor:pointer;">✓ MARK REVIEWED</button>';
+      html += '<button onclick="markStockSold(\'' + escHtml(item.itemId) + '\',' + idx + ')" style="flex:1;background:rgba(112,224,144,0.1);border:1px solid #70e09066;color:#70e090;border-radius:7px;padding:9px;font-size:0.78rem;font-weight:700;letter-spacing:1px;cursor:pointer;">💰 MARK SOLD</button>';
+      html += '</div>';
+      html += '</div>';
+    });
+    content.innerHTML = html;
+  }).catch(function() {
+    content.innerHTML = '<div style="color:#e07070;padding:20px;text-align:center;">Network error. Try again.</div>';
+  });
+}
+
+function _stockReviewUpdateStatus(itemId, cardIdx, newStatus) {
+  var card = document.getElementById('sr-card-' + cardIdx);
+  if (card) card.style.opacity = '0.4';
+  var cbName = 'srCb_' + Date.now();
+  var url = STOCK_REVIEW_URL + '?action=updateStatus&itemId=' + encodeURIComponent(itemId) +
+            '&status=' + encodeURIComponent(newStatus) + '&callback=' + cbName;
+  var script = document.createElement('script');
+  var t = setTimeout(function() {
+    delete window[cbName]; script.remove();
+    if (card) { card.style.opacity = '1'; card.style.borderColor = '#e0707088'; }
+  }, 10000);
+  window[cbName] = function(res) {
+    clearTimeout(t); delete window[cbName]; script.remove();
+    if (res && res.success) {
+      if (card) card.remove();
+      // Update count
+      var remaining = document.querySelectorAll('[id^="sr-card-"]').length;
+      var countEl = document.getElementById('stockReviewCount');
+      if (countEl) countEl.textContent = remaining + ' pending review';
+      if (remaining === 0) {
+        document.getElementById('stockReviewContent').innerHTML =
+          '<div style="color:#70e090;text-align:center;padding:30px;">✓ All stock has been reviewed.</div>';
+      }
+    } else {
+      if (card) { card.style.opacity = '1'; card.style.borderColor = '#e0707088'; }
+      alert('Could not update status. Try again.');
+    }
+  };
+  document.head.appendChild(script);
+  script.src = url;
+}
+
+function markStockReviewed(itemId, cardIdx) { _stockReviewUpdateStatus(itemId, cardIdx, 'Reviewed'); }
+function markStockSold(itemId, cardIdx)     { _stockReviewUpdateStatus(itemId, cardIdx, 'Sold'); }
 
 function closeValuationsPanel() {
   document.getElementById('valuationsPanelOverlay').style.display = 'none';
