@@ -142,6 +142,9 @@
       width: 280px; height: 280px;
       cursor: pointer; user-select: none;
     }
+    @media (max-width: 480px) {
+      .globe-container { width: 180px; height: 180px; }
+    }
     /* New Three.js dual-canvas globe */
     #iva-earth {
       position: absolute; inset: 0;
@@ -555,7 +558,8 @@ function buildOrbital() {
   const W = stage.offsetWidth || 400;
   const H = stage.offsetHeight || 400;
   const cx = W/2, cy = H/2;
-  const globeR = 100; // half of 200px globe
+  const orbEl = document.getElementById('orb');
+  const globeR = (orbEl ? orbEl.offsetWidth : 200) / 2; // actual rendered size
   const orbitR = Math.min(cx, cy) * 0.82; // radius to button centres
   const n = COMMANDS.length;
 
