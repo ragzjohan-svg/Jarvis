@@ -2096,9 +2096,9 @@ function handleCommand(text){
     if(finData && finData.summary){
       var s=finData.summary;
       sys += 'FINANCIALS: income=R'+s.income+' expenses=R'+s.expenses+' balance=R'+s.closingBalance+'\n';
-      if(finData.monthlySummary && finData.monthlySummary.length){
+      if(s.monthlySummary && s.monthlySummary.length){
         sys += 'MONTHLY BREAKDOWN:\n';
-        finData.monthlySummary.forEach(function(m){
+        s.monthlySummary.forEach(function(m){
           sys += '  '+m.period+': income=R'+m.income+' expenses=R'+m.expenses+'\n';
         });
       }
@@ -3205,7 +3205,7 @@ function formatRandVal(n) {
 
 function showFinancialPopup(finData) {
   var s = finData.summary || {};
-  var monthly = finData.monthlySummary || [];
+  var monthly = s.monthlySummary || [];
 
   var lines = [];
   lines.push('═══════════════════════════════════════');
