@@ -628,7 +628,7 @@ window.addEventListener('load', buildOrbital);
 window.addEventListener('resize', buildOrbital);
 
 // ── PIN LOCK ─────────────────────────────────────────────────
-const JARVIS_PIN = '1977';
+// PIN is checked on the server (verifyPin) — it is NOT stored in this file.
 
 // Active user: 'johan' or 'luanne'
 var jarvisUser = 'johan';
@@ -651,7 +651,7 @@ function _fetchSystemAlerts() {
         var t = setTimeout(function(){ delete window[cbName]; script.remove(); resolve(null); }, 15000);
         window[cbName] = function(d){ clearTimeout(t); delete window[cbName]; script.remove(); resolve(d); };
         script.onerror = function(){ clearTimeout(t); delete window[cbName]; script.remove(); resolve(null); };
-        script.src = VALUATION_BACKEND + '?action=getValuations&callback=' + cbName;
+        script.src = jarvisUrl('getValuations', cbName);
         document.head.appendChild(script);
       });
     })(),
@@ -774,18 +774,65 @@ function setUser(user) {
 
 function checkPin() {
   const val = document.getElementById('pinInput').value.trim();
-  if (val === JARVIS_PIN) {
-    document.getElementById('pinOverlay').style.display = 'none';
-    document.getElementById('userSelectOverlay').style.display = 'flex';
-  } else {
-    document.getElementById('pinError').textContent = 'Incorrect PIN. Try again.';
-    document.getElementById('pinInput').value = '';
-  }
+  const errEl = document.getElementById('pinError');
+  const btn = document.getElementById('pinBtn');
+  if (!val) return;
+  errEl.textContent = 'Checking…';
+  if (btn) btn.disabled = true;
+
+  const cbName = 'jarvisPinCb_' + Date.now();
+  const script = document.createElement('script');
+  const done = function() {
+    clearTimeout(timer); delete window[cbName]; script.remove();
+    if (btn) btn.disabled = false;
+  };
+  const timer = setTimeout(function() {
+    done();
+    errEl.textContent = 'No response. Check your connection and try again.';
+  }, 20000);
+  window[cbName] = function(res) {
+    done();
+    if (res && res.ok && res.token) {
+      jarvisToken = res.token;          // kept in memory only: reload = PIN again
+      errEl.textContent = '';
+      document.getElementById('pinInput').value = '';
+      document.getElementById('pinOverlay').style.display = 'none';
+      document.getElementById('userSelectOverlay').style.display = 'flex';
+    } else {
+      errEl.textContent = (res && res.error) ? res.error : 'Incorrect PIN. Try again.';
+      document.getElementById('pinInput').value = '';
+    }
+  };
+  script.onerror = function() {
+    done();
+    errEl.textContent = 'Could not reach the server. Try again.';
+  };
+  script.src = JARVIS_BACKEND + '?action=verifyPin&pin=' + encodeURIComponent(val) + '&callback=' + cbName;
+  document.head.appendChild(script);
 }
 document.getElementById('pinInput').addEventListener('keydown', e => { if(e.key==='Enter') checkPin(); });
 
 // ── BACKEND ──────────────────────────────────────────────────
 const JARVIS_BACKEND = 'https://script.google.com/macros/s/AKfycbyK2EhkwwKQJhl_1A4ZxZwc-XYXHVk0P7NNPiJ8RFcUK7sWnxgGKCnLlglU7Yg5MKdz/exec';
+
+// Session token from the server after a correct PIN (memory only)
+var jarvisToken = '';
+
+// Every data request goes through here so it carries the token.
+// actionQS = 'getLeads'  or  'addBuyer&name=...'
+function jarvisUrl(actionQS, cbName) {
+  return JARVIS_BACKEND + '?action=' + actionQS + '&callback=' + cbName +
+         (jarvisToken ? '&token=' + encodeURIComponent(jarvisToken) : '');
+}
+
+// Server says the token expired (or is wrong): send the user back to the PIN screen
+function jarvisAuthExpired() {
+  jarvisToken = '';
+  var o = document.getElementById('pinOverlay');
+  if (o) o.style.display = 'flex';
+  var e = document.getElementById('pinError');
+  if (e) e.textContent = 'Session expired. Enter your PIN again.';
+}
 
 function askGemini(prompt) {
   // Use POST to avoid URL length limits on long prompts (leads + contractors + history can be 8KB+)
@@ -796,11 +843,12 @@ function askGemini(prompt) {
     fetch(JARVIS_BACKEND, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'askGemini', prompt: prompt })
+      body: JSON.stringify({ action: 'askGemini', prompt: prompt, token: jarvisToken })
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
       clearTimeout(timer);
+      if (data && data.authRequired) { jarvisAuthExpired(); resolve('Session expired. Please enter your PIN again.'); return; }
       resolve(data.answer || data.error || 'No response.');
     })
     .catch(function() {
@@ -817,7 +865,7 @@ function askGemini(prompt) {
         clearTimeout(t2); delete window[cbName]; script.remove();
         resolve(data.answer || data.error || 'No response.');
       };
-      script.src = JARVIS_BACKEND + '?action=askGemini&callback=' + cbName + '&prompt=' + encodeURIComponent(safe);
+      script.src = jarvisUrl('askGemini', cbName) + '&prompt=' + encodeURIComponent(safe);
       document.head.appendChild(script);
     });
   });
@@ -839,7 +887,9 @@ function callBackend(action, attempt) {
       }
     }, 35000);
     window[cbName] = function(data) {
-      clearTimeout(timer); delete window[cbName]; script.remove(); resolve(data);
+      clearTimeout(timer); delete window[cbName]; script.remove();
+      if (data && data.authRequired) jarvisAuthExpired();
+      resolve(data);
     };
     script.onerror = function() {
       clearTimeout(timer); delete window[cbName]; script.remove();
@@ -849,7 +899,7 @@ function callBackend(action, attempt) {
         reject(new Error('script error'));
       }
     };
-    script.src = JARVIS_BACKEND + '?action=' + action + '&callback=' + cbName;
+    script.src = jarvisUrl(action, cbName);
     document.head.appendChild(script);
   });
 }
@@ -2410,7 +2460,7 @@ function toggleSite() {
     _siteState = (data && data.status) ? data.status : 'unknown';
     renderSitePanel();
   };
-  script.src = JARVIS_BACKEND + '?action=getSiteStatus&callback=' + cbName;
+  script.src = jarvisUrl('getSiteStatus', cbName);
   document.head.appendChild(script);
 
   // Fetch pending products queue simultaneously
@@ -2424,7 +2474,7 @@ function toggleSite() {
     clearTimeout(timerProd); delete window[cbProd]; scriptProd.remove();
     renderPendingProducts(data);
   };
-  scriptProd.src = JARVIS_BACKEND + '?action=getPendingProducts&callback=' + cbProd;
+  scriptProd.src = jarvisUrl('getPendingProducts', cbProd);
   document.head.appendChild(scriptProd);
 }
 
@@ -2478,7 +2528,7 @@ function markSiteState(state) {
   var action = state === 'offline' ? 'setSiteOffline' : 'setSiteLive';
   var script = document.createElement('script');
   window[cbName] = function() { delete window[cbName]; script.remove(); };
-  script.src = JARVIS_BACKEND + '?action=' + action + '&callback=' + cbName;
+  script.src = jarvisUrl(action, cbName);
   document.head.appendChild(script);
 
   renderSitePanel();
@@ -2495,7 +2545,7 @@ function closeSitePanel() {
 // ── PRODUCT FOLDER CREATOR ────────────────────────────────────
 // Opens the Google-hosted upload page in a new tab (bypasses CORS)
 function openFolderCreator() {
-  window.open(JARVIS_BACKEND + '?page=foldercreator', '_blank');
+  window.open(JARVIS_BACKEND + '?page=foldercreator' + (jarvisToken ? '&token=' + encodeURIComponent(jarvisToken) : ''), '_blank');
 }
 
 // ── SYSTEM DIAGNOSTICS ────────────────────────────────────────
@@ -2574,7 +2624,7 @@ function runDiagnostics() {
         }, 35000);
         window[cbName] = function(d) { clearTimeout(t); delete window[cbName]; script.remove(); resolve(d); };
         script.onerror = function() { clearTimeout(t); delete window[cbName]; script.remove(); reject(new Error('script error')); };
-        script.src = VALUATION_BACKEND + '?action=getValuations&callback=' + cbName;
+        script.src = jarvisUrl('getValuations', cbName);
         document.head.appendChild(script);
       });
     } else {
@@ -2908,8 +2958,8 @@ function escHtml(s) {
 }
 
 // ── VALUATIONS PANEL ──────────────────────────────────────────────────────
-// Replace with your deployed GAS valuation web app URL after deploying
-var VALUATION_BACKEND = 'https://script.google.com/macros/s/AKfycbzS0ZSa_KkItSObAqw9wp9Lx6SUEf5U3d3t54MpFelunPCvtZ47NJX2Joo8eaVszwfs/exec';
+// Valuations are now read through the Jarvis backend (the valuation app address is kept on the server).
+var VALUATION_BACKEND = 'via-jarvis';
 
 function openValuationsPanel() {
   var overlay = document.getElementById('valuationsPanelOverlay');
@@ -2918,7 +2968,7 @@ function openValuationsPanel() {
 }
 
 // ── STOCK REVIEW PANEL ─────────────────────────────────────────────────────
-var STOCK_REVIEW_URL = 'https://script.google.com/macros/s/AKfycby6yK0Aj8cleY_wWv2_VfCGqTc1Kq1q1lBCT1g5wrLQlVjz_bnfAHcEemofvsN3F67W/exec';
+// Stock status changes go through the Jarvis backend (the stock app address is kept on the server).
 
 function openStockReviewPanel() {
   document.getElementById('stockReviewOverlay').style.display = 'flex';
@@ -2980,8 +3030,8 @@ function _stockReviewUpdateStatus(itemId, cardIdx, newStatus) {
   var card = document.getElementById('sr-card-' + cardIdx);
   if (card) card.style.opacity = '0.4';
   var cbName = 'srCb_' + Date.now();
-  var url = STOCK_REVIEW_URL + '?action=updateStatus&itemId=' + encodeURIComponent(itemId) +
-            '&status=' + encodeURIComponent(newStatus) + '&callback=' + cbName;
+  var url = jarvisUrl('updateStockStatus&itemId=' + encodeURIComponent(itemId) +
+            '&status=' + encodeURIComponent(newStatus), cbName);
   var script = document.createElement('script');
   var t = setTimeout(function() {
     delete window[cbName]; script.remove();
@@ -3051,7 +3101,7 @@ function loadValuations() {
   };
 
   var script = document.createElement('script');
-  script.src = VALUATION_BACKEND + '?action=getValuations&callback=' + cbName;
+  script.src = jarvisUrl('getValuations', cbName);
   document.head.appendChild(script);
 }
 
@@ -3190,7 +3240,7 @@ function markValDone(cardId, rowIndex) {
     var cbName = 'doneCb_' + Date.now();
     window[cbName] = function() { delete window[cbName]; };
     var script = document.createElement('script');
-    script.src = VALUATION_BACKEND + '?action=updateStatus&rowIndex=' + rowIndex + '&status=Done&callback=' + cbName;
+    script.src = jarvisUrl('updateValuationStatus&rowIndex=' + encodeURIComponent(rowIndex) + '&status=Done', cbName);
     document.head.appendChild(script);
   }
 }
