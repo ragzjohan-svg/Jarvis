@@ -2394,6 +2394,7 @@ function submitBuyerForm() {
   var phone     = document.getElementById('bf-phone').value.trim();
   var looking   = document.getElementById('bf-looking').value.trim();
   var budget    = document.getElementById('bf-budget').value.trim();
+  var province  = document.getElementById('bf-province').value;
   var statusEl  = document.getElementById('bf-status');
 
   if (!name || !looking) {
@@ -2408,7 +2409,8 @@ function submitBuyerForm() {
     '&name='    + encodeURIComponent(name) +
     '&phone='   + encodeURIComponent(phone) +
     '&looking=' + encodeURIComponent(looking) +
-    '&budget='  + encodeURIComponent(budget);
+    '&budget='  + encodeURIComponent(budget) +
+    '&province=' + encodeURIComponent(province);
 
   // Use a longer timeout for addBuyer — sheet write takes a moment
   var addTimer = setTimeout(function() {
@@ -2825,6 +2827,13 @@ function copyDiagnostics() {
         <label style="color:#aaa;font-size:0.75rem;letter-spacing:1px;">BUDGET (R)</label>
         <input id="bf-budget" type="text" placeholder="e.g. 550000"
           style="background:#0d0d1a;border:1px solid #00d4ff44;border-radius:8px;padding:10px 14px;color:#fff;font-size:0.95rem;outline:none;">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        <label style="color:#aaa;font-size:0.75rem;letter-spacing:1px;">PROVINCE</label>
+        <select id="bf-province"
+          style="background:#0d0d1a;border:1px solid #00d4ff44;border-radius:8px;padding:10px 14px;color:#fff;font-size:0.95rem;outline:none;">
+          <option value="">Select province</option><option value="Eastern Cape">Eastern Cape</option><option value="Free State">Free State</option><option value="Gauteng">Gauteng</option><option value="KwaZulu-Natal">KwaZulu-Natal</option><option value="Limpopo">Limpopo</option><option value="Mpumalanga">Mpumalanga</option><option value="Northern Cape">Northern Cape</option><option value="North West">North West</option><option value="Western Cape">Western Cape</option>
+        </select>
       </div>
       <div id="bf-status" style="font-size:0.85rem;min-height:18px;"></div>
       <div style="display:flex;gap:10px;margin-top:4px;">
