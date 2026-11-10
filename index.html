@@ -549,6 +549,7 @@ const COMMANDS = [
   { icon:'🔧', text:'DIAG',        sub:'System check',     cmd:'__DIAGNOSTICS__' },
   { icon:'🌐', text:'SITE',        sub:'Toggle portal',    cmd:'__TOGGLE_SITE__' },
   { icon:'🏷️', text:'VALUATIONS', sub:'Requests',         cmd:'__VALUATIONS__' },
+  { icon:'🎯', text:'BUYERS',     sub:'List & matches',   cmd:'__BUYERS__' },
 ];
 
 function buildOrbital() {
@@ -617,6 +618,7 @@ function buildOrbital() {
                         cmd.cmd === '__DIAGNOSTICS__'  ? runDiagnostics()   :
                         cmd.cmd === '__TOGGLE_SITE__'  ? toggleSite()       :
                         cmd.cmd === '__VALUATIONS__'   ? openValuationsPanel() :
+                        cmd.cmd === '__BUYERS__'       ? openBuyersPanel() :
                         cmd.cmd === '__STOCK_REVIEW__' ? openStockReviewPanel() :
                         handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
@@ -2869,6 +2871,32 @@ function copyDiagnostics() {
 </div>
 
 <!-- ── VALUATIONS PANEL OVERLAY ── -->
+<!-- ── BUYERS PANEL OVERLAY ───────────────────────────────── -->
+<div id="buyersPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1120;border:1px solid rgba(0,212,255,0.3);border-radius:16px;width:95%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(0,212,255,0.08);">
+    <div style="padding:18px 20px 12px;flex-shrink:0;border-bottom:1px solid rgba(0,212,255,0.12);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:0.85rem;color:#00d4ff;letter-spacing:3px;">🎯 BUYERS</div>
+          <div id="buyersCountLabel" style="font-size:0.75rem;color:#64748b;margin-top:3px;"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="copyBuyerFormLink()" title="Copy the link to the buyer form" style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.25);color:#00d4ff;border-radius:7px;padding:7px 10px;cursor:pointer;font-size:0.7rem;font-family:'Orbitron',sans-serif;letter-spacing:1px;">COPY FORM LINK</button>
+          <button onclick="refreshBuyersPanel()" title="Refresh" style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.25);color:#00d4ff;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:0.75rem;">↺</button>
+          <button onclick="closeBuyersPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button id="buyTabList" onclick="switchBuyerTab('list')" style="flex:1;padding:9px;border-radius:8px;font-size:0.78rem;font-weight:700;letter-spacing:1px;cursor:pointer;">BUYERS</button>
+        <button id="buyTabMatch" onclick="switchBuyerTab('match')" style="flex:1;padding:9px;border-radius:8px;font-size:0.78rem;font-weight:700;letter-spacing:1px;cursor:pointer;">MATCHES</button>
+      </div>
+      <input id="buyerSearch" type="text" oninput="renderBuyersList()" placeholder="Search name, province, what they want..."
+        style="width:100%;background:#0d0d1a;border:1px solid #00d4ff44;border-radius:8px;padding:9px 12px;color:#fff;font-size:0.9rem;outline:none;">
+    </div>
+    <div id="buyersContent" style="overflow-y:auto;padding:14px 16px 16px;flex:1;min-height:0;"></div>
+  </div>
+</div>
+
 <div id="valuationsPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;padding:16px;">
   <div style="background:#0d1120;border:1px solid rgba(212,175,55,0.3);border-radius:16px;width:95%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(212,175,55,0.08);">
 
@@ -2969,6 +2997,163 @@ function escHtml(s) {
 // ── VALUATIONS PANEL ──────────────────────────────────────────────────────
 // Valuations are now read through the Jarvis backend (the valuation app address is kept on the server).
 var VALUATION_BACKEND = 'via-jarvis';
+
+// ── BUYERS PANEL ──────────────────────────────────────────────────────────
+var BUYER_FORM_URL = 'https://script.google.com/macros/s/AKfycby3YCQedlcB7qrXqV80jxtUBaW4uemGs2jmtfYC7mousBG9OYq4EetcL3wjyoA1NwpI2g/exec';
+var _buyersAll = [];
+var _buyerTab  = 'list';
+
+function openBuyersPanel() {
+  document.getElementById('buyersPanelOverlay').style.display = 'flex';
+  switchBuyerTab('list');
+}
+function closeBuyersPanel() {
+  document.getElementById('buyersPanelOverlay').style.display = 'none';
+}
+function refreshBuyersPanel() {
+  if (_buyerTab === 'list') loadBuyersList(); else loadBuyerMatchesPanel();
+}
+function copyBuyerFormLink() {
+  var done = function() { try { respond('The buyer form link is copied.', ''); } catch(e) {} };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(BUYER_FORM_URL).then(done).catch(function() { window.prompt('Copy the buyer form link:', BUYER_FORM_URL); });
+  } else {
+    window.prompt('Copy the buyer form link:', BUYER_FORM_URL);
+  }
+}
+function switchBuyerTab(tab) {
+  _buyerTab = tab;
+  var on  = 'background:rgba(0,212,255,0.18);border:1px solid #00d4ff;color:#00d4ff;';
+  var off = 'background:transparent;border:1px solid #333;color:#64748b;';
+  var base = 'flex:1;padding:9px;border-radius:8px;font-size:0.78rem;font-weight:700;letter-spacing:1px;cursor:pointer;';
+  document.getElementById('buyTabList').style.cssText  = base + (tab === 'list'  ? on : off);
+  document.getElementById('buyTabMatch').style.cssText = base + (tab === 'match' ? on : off);
+  document.getElementById('buyerSearch').style.display = (tab === 'list') ? 'block' : 'none';
+  if (tab === 'list') loadBuyersList(); else loadBuyerMatchesPanel();
+}
+function buyerWaLink(phone) {
+  var d = String(phone || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.indexOf('27') === 0 && d.length >= 11) { /* already international */ }
+  else if (d.indexOf('0') === 0) d = '27' + d.substring(1);
+  return 'https://wa.me/' + d;
+}
+function buyerContactButtons(phone) {
+  var tel = String(phone || '').replace(/[^0-9+]/g, '');
+  var wa  = buyerWaLink(phone);
+  var h = '';
+  var b = 'display:inline-block;text-decoration:none;border-radius:7px;padding:8px 12px;font-size:0.75rem;font-weight:700;letter-spacing:1px;';
+  if (tel) h += '<a href="tel:' + escHtml(tel) + '" style="' + b + 'background:rgba(0,212,255,0.12);border:1px solid #00d4ff66;color:#00d4ff;">CALL</a> ';
+  if (wa)  h += '<a href="' + escHtml(wa) + '" target="_blank" rel="noopener" style="' + b + 'background:rgba(34,197,94,0.12);border:1px solid #22c55e66;color:#22c55e;">WHATSAPP</a> ';
+  return h;
+}
+function buyerMoney(v) {
+  var n = Number(String(v || '').replace(/[^0-9.]/g, ''));
+  return n ? 'R ' + n.toLocaleString('en-ZA') : '';
+}
+
+function loadBuyersList() {
+  var content = document.getElementById('buyersContent');
+  content.innerHTML = '<div style="text-align:center;padding:28px;color:#64748b;font-size:0.85rem;">Loading buyers…</div>';
+  callBackend('getBuyers').then(function(data) {
+    if (!data || !data.success) {
+      content.innerHTML = '<div style="color:#e07070;padding:20px;text-align:center;">Could not load buyers. Try again.</div>';
+      return;
+    }
+    _buyersAll = data.buyers || [];
+    renderBuyersList();
+  }).catch(function() {
+    content.innerHTML = '<div style="color:#e07070;padding:20px;text-align:center;">Could not load buyers. Try again.</div>';
+  });
+}
+
+function renderBuyersList() {
+  if (_buyerTab !== 'list') return;
+  var content = document.getElementById('buyersContent');
+  var q = (document.getElementById('buyerSearch').value || '').toLowerCase().trim();
+  var list = _buyersAll.filter(function(b) {
+    if (!q) return true;
+    return (b.name + ' ' + b.phone + ' ' + b.looking + ' ' + b.province).toLowerCase().indexOf(q) !== -1;
+  });
+  document.getElementById('buyersCountLabel').textContent =
+    list.length + ' active buyer' + (list.length !== 1 ? 's' : '') + (q ? ' (filtered of ' + _buyersAll.length + ')' : '');
+  if (!list.length) {
+    content.innerHTML = '<div style="text-align:center;padding:30px;color:#64748b;">' +
+      (_buyersAll.length ? 'No buyers match that search.' : 'No active buyers yet.') + '</div>';
+    return;
+  }
+  content.innerHTML = list.map(function(b) {
+    var h = '<div style="background:#111827;border:1px solid rgba(0,212,255,0.18);border-radius:10px;padding:14px;margin-bottom:12px;">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">';
+    h += '<div style="color:#fff;font-weight:700;font-size:0.95rem;">' + escHtml(b.name);
+    if (b.source === 'Form') h += ' <span style="background:rgba(212,175,55,0.15);border:1px solid #d4af3766;color:#d4af37;border-radius:4px;padding:1px 6px;font-size:0.62rem;letter-spacing:1px;vertical-align:middle;">FORM</span>';
+    h += '</div>';
+    h += '<div style="color:#64748b;font-size:0.72rem;white-space:nowrap;">' + escHtml(b.date) + '</div></div>';
+    h += '<div style="color:#64748b;font-size:0.8rem;margin-top:3px;">' + escHtml(b.phone) + (b.province ? ' · ' + escHtml(b.province) : '') + '</div>';
+    h += '<div style="color:#e2e8f0;font-size:0.9rem;margin-top:8px;">' + escHtml(b.looking) + '</div>';
+    if (buyerMoney(b.budget)) h += '<div style="color:#00d4ff;font-size:0.82rem;margin-top:4px;">Budget ' + escHtml(buyerMoney(b.budget)) + '</div>';
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">' + buyerContactButtons(b.phone);
+    h += '<button onclick="markBuyerFulfilled(\'' + escHtml(b.buyerId) + '\')" style="background:rgba(112,224,144,0.1);border:1px solid #70e09066;color:#70e090;border-radius:7px;padding:8px 12px;font-size:0.75rem;font-weight:700;letter-spacing:1px;cursor:pointer;">FULFILLED</button>';
+    h += '</div></div>';
+    return h;
+  }).join('');
+}
+
+function markBuyerFulfilled(buyerId) {
+  var b = _buyersAll.filter(function(x) { return x.buyerId === buyerId; })[0];
+  if (!confirm('Mark ' + (b ? b.name : 'this buyer') + ' as fulfilled? They will drop off the list and stop triggering match alerts.')) return;
+  callBackend('markBuyerFulfilled&buyerId=' + encodeURIComponent(buyerId)).then(function(data) {
+    if (data && data.success) { refreshBuyersPanel(); }
+    else { alert((data && data.error) || 'Could not update the buyer.'); }
+  }).catch(function() { alert('Could not update the buyer. Try again.'); });
+}
+
+function loadBuyerMatchesPanel() {
+  var content = document.getElementById('buyersContent');
+  document.getElementById('buyersCountLabel').textContent = '';
+  content.innerHTML = '<div style="text-align:center;padding:28px;color:#64748b;font-size:0.85rem;">Checking buyers against stock…</div>';
+  callBackend('getBuyerMatches').then(function(data) {
+    if (!data || !data.success) {
+      content.innerHTML = '<div style="color:#e07070;padding:20px;text-align:center;">Could not check matches. Try again.</div>';
+      return;
+    }
+    var ms = data.matches || [];
+    if (!ms.length) {
+      document.getElementById('buyersCountLabel').textContent = '0 matches';
+      content.innerHTML = '<div style="text-align:center;padding:30px;color:#64748b;">No active buyer matches the stock on hand right now.</div>';
+      return;
+    }
+    // Group by buyer
+    var order = [], groups = {};
+    ms.forEach(function(m) {
+      var k = m.buyer.buyerId || m.buyer.name;
+      if (!groups[k]) { groups[k] = { buyer: m.buyer, stock: [] }; order.push(k); }
+      groups[k].stock.push(m);
+    });
+    document.getElementById('buyersCountLabel').textContent =
+      ms.length + ' match' + (ms.length !== 1 ? 'es' : '') + ' · ' + order.length + ' buyer' + (order.length !== 1 ? 's' : '');
+    content.innerHTML = order.map(function(k) {
+      var g = groups[k], b = g.buyer;
+      var h = '<div style="background:#111827;border:1px solid rgba(212,175,55,0.3);border-radius:10px;padding:14px;margin-bottom:12px;">';
+      h += '<div style="color:#fff;font-weight:700;font-size:0.95rem;">' + escHtml(b.name) + '</div>';
+      h += '<div style="color:#64748b;font-size:0.8rem;margin-top:3px;">' + escHtml(b.phone) + (b.province ? ' · ' + escHtml(b.province) : '') + '</div>';
+      h += '<div style="color:#e2e8f0;font-size:0.85rem;margin-top:6px;">Wants: ' + escHtml(b.looking) + (buyerMoney(b.budget) ? ' · budget ' + escHtml(buyerMoney(b.budget)) : '') + '</div>';
+      g.stock.forEach(function(m) {
+        h += '<div style="margin-top:10px;padding:10px;background:#0d1120;border-left:3px solid #d4af37;border-radius:6px;">';
+        h += '<div style="color:#fff;font-size:0.88rem;font-weight:700;">' + escHtml(m.stock.title) + '</div>';
+        h += '<div style="color:#64748b;font-size:0.76rem;margin-top:2px;">' + escHtml(m.stock.seller) + (m.stock.province ? ' · ' + escHtml(m.stock.province) : '') + '</div>';
+        h += '<div style="color:#d4af37;font-size:0.82rem;margin-top:3px;">' + (buyerMoney(m.stock.askingPrice) ? escHtml(buyerMoney(m.stock.askingPrice)) : 'No price') +
+             (m.overBudget ? ' <span style="color:#f87171;">· above budget</span>' : '') + '</div>';
+        h += '</div>';
+      });
+      h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">' + buyerContactButtons(b.phone) + '</div>';
+      h += '</div>';
+      return h;
+    }).join('');
+  }).catch(function() {
+    content.innerHTML = '<div style="color:#e07070;padding:20px;text-align:center;">Could not check matches. Try again.</div>';
+  });
+}
 
 function openValuationsPanel() {
   var overlay = document.getElementById('valuationsPanelOverlay');
