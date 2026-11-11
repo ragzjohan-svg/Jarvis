@@ -550,6 +550,7 @@ const COMMANDS = [
   { icon:'🌐', text:'SITE',        sub:'Toggle portal',    cmd:'__TOGGLE_SITE__' },
   { icon:'🏷️', text:'VALUATIONS', sub:'Requests',         cmd:'__VALUATIONS__' },
   { icon:'🎯', text:'BUYERS',     sub:'List & matches',   cmd:'__BUYERS__' },
+  { icon:'✉️', text:'EMAIL',      sub:'Read & reply',     cmd:'__EMAIL__' },
 ];
 
 function buildOrbital() {
@@ -612,6 +613,7 @@ function buildOrbital() {
     btn.style.left = bx + 'px';
     btn.style.top  = by + 'px';
     btn.style.zIndex = '5';
+    if (cmd.cmd === '__EMAIL__') btn.id = 'emailOrbBtn';
     btn.innerHTML = `<span class="ob-icon">${cmd.icon}</span><span class="ob-text">${cmd.text}</span><span class="ob-sub">${cmd.sub}</span>`;
     btn.onclick = () => cmd.cmd === '__ADD_BUYER__'    ? openBuyerForm()    :
                         cmd.cmd === '__VIEW_ADS__'     ? openAdsPanel()     :
@@ -619,10 +621,12 @@ function buildOrbital() {
                         cmd.cmd === '__TOGGLE_SITE__'  ? toggleSite()       :
                         cmd.cmd === '__VALUATIONS__'   ? openValuationsPanel() :
                         cmd.cmd === '__BUYERS__'       ? openBuyersPanel() :
+                        cmd.cmd === '__EMAIL__'        ? openEmailPanel('jarvis') :
                         cmd.cmd === '__STOCK_REVIEW__' ? openStockReviewPanel() :
                         handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
   });
+  if (typeof setEmailBadge === 'function' && window._emailBadgeN) setEmailBadge(window._emailBadgeN);
 }
 
 // Build on load and resize
@@ -2005,11 +2009,8 @@ function handleCommand(text){
     return;
   }
 
-  // ── SITE TOGGLE TRIGGER — voice or text ──
-  if (/toggle site|site (on|off|offline|online|live)|turn (on|off) (the )?site|maintenance mode|switch site|portal (on|off|offline|online|live)/.test(t)) {
-    toggleSite();
-    return;
-  }
+  // ── EMAIL (approve-before-send, inbox) ──
+  if (handleEmailVoice(text)) return;
 
   setOrbState('thinking');
   document.getElementById('responseBody').textContent = 'Thinking…';
@@ -2064,21 +2065,6 @@ function handleCommand(text){
     }).catch(function() {
       respond('I could not reach the stock intake system right now, ' + jarvisUserTitle + '.', text);
     });
-    return;
-  }
-
-  // ── EMAIL COMMAND DETECTION ──
-  var isEmailCmd = /email|send.*report|mail.*me|send.*overview|send.*leads|send.*contractor|send.*financial/.test(t);
-  if (isEmailCmd) {
-    var recipient = resolveRecipient(text);
-    var subject   = resolveEmailSubject(text);
-    var recipientName = recipient === jarvisUserEmail ? ('you, ' + jarvisUserTitle) :
-                        recipient === 'jansevanrensburg.luanne@gmail.com' ? 'Luanne' :
-                        recipient === 'johan@brisksure.co.za' ? 'Johan' : recipient;
-    var asPdf = /pdf|document|attach/.test(t);
-    var confirmMsg = 'Sending the ' + subject.toLowerCase() + ' to ' + recipientName +
-                     (asPdf ? ' as a PDF' : '') + ' now.';
-    sendJarvisEmail(recipient, subject, confirmMsg, text, asPdf);
     return;
   }
 
@@ -2906,6 +2892,54 @@ function copyDiagnostics() {
   </div>
 </div>
 
+<!-- ── EMAIL CONFIRM OVERLAY (nothing is sent until SEND / "yes") ── -->
+<div id="emailConfirmOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:10001;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1120;border:1px solid rgba(255,170,0,0.45);border-radius:16px;width:95%;max-width:520px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(255,170,0,0.08);">
+    <div style="padding:16px 18px 10px;border-bottom:1px solid rgba(255,170,0,0.2);">
+      <div style="font-family:'Orbitron',sans-serif;font-size:0.8rem;color:#ffaa00;letter-spacing:3px;">✉️ APPROVE EMAIL</div>
+      <div id="ecWarn" style="font-size:0.72rem;color:#94a3b8;margin-top:4px;">Nothing is sent until you approve. Say "send", "cancel", or tell me what to change.</div>
+    </div>
+    <div style="padding:12px 18px;overflow-y:auto;flex:1;min-height:0;">
+      <div style="font-size:0.7rem;color:#64748b;letter-spacing:1px;">TO</div>
+      <div id="ecTo" style="color:#fff;font-size:0.9rem;margin-bottom:8px;word-break:break-all;"></div>
+      <div id="ecWhen" style="display:none;color:#ffaa00;font-size:0.8rem;margin-bottom:8px;"></div>
+      <div style="font-size:0.7rem;color:#64748b;letter-spacing:1px;">SUBJECT</div>
+      <input id="ecSubject" type="text" style="width:100%;background:#0d0d1a;border:1px solid #ffaa0044;border-radius:8px;padding:8px 10px;color:#fff;font-size:0.9rem;margin-bottom:8px;outline:none;">
+      <div style="font-size:0.7rem;color:#64748b;letter-spacing:1px;">MESSAGE</div>
+      <textarea id="ecBody" rows="10" style="width:100%;background:#0d0d1a;border:1px solid #ffaa0044;border-radius:8px;padding:8px 10px;color:#fff;font-size:0.88rem;outline:none;resize:vertical;font-family:inherit;"></textarea>
+      <div id="ecStatus" style="font-size:0.78rem;color:#00d4ff;margin-top:8px;min-height:1em;"></div>
+    </div>
+    <div style="padding:12px 18px 16px;display:flex;gap:8px;border-top:1px solid rgba(255,170,0,0.2);">
+      <button id="ecSend" onclick="emailConfirmSend()" style="flex:2;padding:11px;border-radius:8px;background:rgba(0,255,136,0.15);border:1px solid #00ff88;color:#00ff88;font-weight:700;letter-spacing:1px;cursor:pointer;">SEND</button>
+      <button onclick="emailConfirmChange()" style="flex:1;padding:11px;border-radius:8px;background:rgba(0,212,255,0.1);border:1px solid #00d4ff66;color:#00d4ff;font-weight:700;cursor:pointer;">CHANGE</button>
+      <button onclick="emailConfirmCancel()" style="flex:1;padding:11px;border-radius:8px;background:rgba(255,60,60,0.1);border:1px solid #ff4444aa;color:#ff6666;font-weight:700;cursor:pointer;">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── EMAIL INBOX PANEL ── -->
+<div id="emailPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1120;border:1px solid rgba(0,212,255,0.3);border-radius:16px;width:95%;max-width:560px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(0,212,255,0.08);">
+    <div style="padding:16px 18px 10px;border-bottom:1px solid rgba(0,212,255,0.12);flex-shrink:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:0.85rem;color:#00d4ff;letter-spacing:3px;">✉️ EMAIL</div>
+          <div style="font-size:0.72rem;color:#64748b;margin-top:3px;">External mail only (not from IVA addresses)</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="emailRefresh()" style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.25);color:#00d4ff;border-radius:7px;padding:7px 12px;cursor:pointer;">↺</button>
+          <button onclick="closeEmailPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button id="emTabJarvis" onclick="switchEmailTab('jarvis')" style="flex:1;padding:9px;border-radius:8px;font-size:0.78rem;font-weight:700;letter-spacing:1px;cursor:pointer;">JARVIS INBOX</button>
+        <button id="emTabJohan" onclick="switchEmailTab('johan')" style="flex:1;padding:9px;border-radius:8px;font-size:0.78rem;font-weight:700;letter-spacing:1px;cursor:pointer;">JOHAN@BRISKSURE</button>
+      </div>
+    </div>
+    <div id="emailPanelContent" style="overflow-y:auto;padding:12px 16px 16px;flex:1;min-height:0;"></div>
+  </div>
+</div>
+
 <!-- ── VALUATIONS PANEL OVERLAY ── -->
 <!-- ── BUYERS PANEL OVERLAY ───────────────────────────────── -->
 <div id="buyersPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;padding:16px;">
@@ -3598,6 +3632,339 @@ function copyValCell(cellNum, idx) {
     setTimeout(function() { if (btn) { btn.textContent = original; btn.style.color = ''; } }, 2500);
   });
 }
+
+// ══ JARVIS EMAIL: approve-before-send + external inbox ══════════════════════
+var _emailDraft = null;          // { draftId, to, subject, body, ... } while the confirm box is open
+var _emailAwaitRecipient = null; // original instruction while waiting for a recipient
+var _emailTab = 'jarvis';
+var _emailList = [];
+var _emailOpen = null;           // message currently open in the panel
+var _emailSending = false;
+
+function emailRecipientName(addr) {
+  var a = String(addr || '').toLowerCase();
+  if (a === 'jansevanrensburg.luanne@gmail.com') return 'Luanne';
+  if (a === 'johan@brisksure.co.za') return 'Johan';
+  if (a === 'johan.huysamen@yahoo.com') return 'Johan (Yahoo)';
+  return addr;
+}
+
+// Finds who an email is for. Returns null when it cannot tell (we ask, never guess).
+function resolveRecipientOrNull(text) {
+  var m = text.match(/[\w.+-]+@[\w.-]+\.\w+/);
+  if (m) return m[0];
+  var t = text.toLowerCase();
+  var keys = Object.keys(KNOWN_RECIPIENTS).sort(function(a,b){ return b.length - a.length; });
+  for (var i = 0; i < keys.length; i++) {
+    var re = new RegExp('(^|[^a-z])' + keys[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z]|$)');
+    if (re.test(t)) {
+      var r = KNOWN_RECIPIENTS[keys[i]];
+      return r === '__CURRENT_USER__' ? jarvisUserEmail : r;
+    }
+  }
+  return null;
+}
+
+var REPORT_RE = /\b(overview|briefing|how are we|business summary|leads? (report|summary)|contractor (stats|performance|report)|financial (summary|report|overview)|stock (intake )?(report|summary))\b/;
+
+function startEmailDraft(text, recipientKnown) {
+  var t = text.toLowerCase();
+  var to = recipientKnown || resolveRecipientOrNull(text);
+  var isReport = REPORT_RE.test(t) && /\b(e-?mail|send|mail)\b/.test(t);
+  if (!to) {
+    _emailAwaitRecipient = text;
+    respond('Who should I send it to, ' + jarvisUserTitle + '? Say Luanne, Johan or yahoo, or type the email address in the box.', '');
+    return;
+  }
+  _emailAwaitRecipient = null;
+  var asPdf = /\b(pdf|document|attach)/.test(t);
+  var subject = isReport ? resolveEmailSubject(text) : '';
+  respond('Drafting that email now.', '');
+  var qs = 'draftEmail&to=' + encodeURIComponent(to) + '&instruction=' + encodeURIComponent(text) +
+           '&user=' + encodeURIComponent(jarvisUser) + (isReport ? '&report=1&subject=' + encodeURIComponent(subject) : '') +
+           (asPdf ? '&pdf=true' : '');
+  callBackend(qs).then(showEmailDraft).catch(function() {
+    respond('I could not reach the server to write that email. Nothing was sent.', '');
+  });
+}
+
+function startEmailReply(instruction) {
+  if (!_emailOpen) { respond('Open an email first, then tell me what to reply.', ''); return; }
+  respond('Drafting your reply.', '');
+  var qs = 'draftEmail&replyMsgId=' + encodeURIComponent(_emailOpen.id) + '&instruction=' + encodeURIComponent(instruction) +
+           '&user=' + encodeURIComponent(jarvisUser);
+  callBackend(qs).then(showEmailDraft).catch(function() {
+    respond('I could not reach the server to write that reply. Nothing was sent.', '');
+  });
+}
+
+function showEmailDraft(d) {
+  if (!d || !d.ok) {
+    respond((d && d.error) ? d.error : 'I could not write that email. Nothing was sent.', '');
+    return;
+  }
+  _emailDraft = d;
+  document.getElementById('ecTo').textContent = emailRecipientName(d.to) + (emailRecipientName(d.to) !== d.to ? '  <' + d.to + '>' : '');
+  document.getElementById('ecSubject').value = d.subject;
+  document.getElementById('ecBody').value = d.body;
+  document.getElementById('ecBody').dataset.orig = d.body;
+  document.getElementById('ecSubject').dataset.orig = d.subject;
+  document.getElementById('ecStatus').textContent = '';
+  var w = document.getElementById('ecWhen');
+  if (d.sendAt) { w.style.display = 'block'; w.textContent = '⏰ Will be sent on ' + d.sendAtLabel; } else { w.style.display = 'none'; }
+  document.getElementById('ecWarn').textContent = (d.external ? '⚠ This address is outside IVA. ' : '') +
+    'Nothing is sent until you approve. Say "send", "cancel", or tell me what to change.';
+  document.getElementById('emailConfirmOverlay').style.display = 'flex';
+  _emailSending = false;
+  document.getElementById('ecSend').disabled = false;
+
+  var who = emailRecipientName(d.to);
+  var say = 'I have drafted an email to ' + who + (d.sendAt ? ', to go out ' + d.sendAtLabel : '') + '. Subject: ' + d.subject + '. ';
+  if (d.isReport) say += 'It contains the report you asked for. ';
+  else say += 'It says: ' + d.body.replace(/\n+/g, ' ').substring(0, 600) + ' ';
+  say += 'Shall I send it?';
+  setOrbState('idle');
+  speak(say);
+}
+
+function emailConfirmSend() {
+  if (!_emailDraft || _emailSending) return;
+  _emailSending = true;
+  var btn = document.getElementById('ecSend'); btn.disabled = true;
+  var st = document.getElementById('ecStatus'); st.textContent = 'Sending…';
+  var subj = document.getElementById('ecSubject').value.trim();
+  var body = document.getElementById('ecBody').value;
+  var edited = (body !== document.getElementById('ecBody').dataset.orig) || (subj !== document.getElementById('ecSubject').dataset.orig);
+  var qs = 'sendDraft&draftId=' + encodeURIComponent(_emailDraft.draftId);
+  if (edited) {
+    var extra = '&subject=' + encodeURIComponent(subj) + '&body=' + encodeURIComponent(body);
+    if (extra.length > 7000) {
+      st.textContent = 'Your edited message is too long to send from here. Shorten it, or use CHANGE and tell me what to alter.';
+      _emailSending = false; btn.disabled = false; return;
+    }
+    qs += extra;
+  }
+  var who = emailRecipientName(_emailDraft.to);
+  callBackend(qs).then(function(r) {
+    if (r && r.ok) {
+      document.getElementById('emailConfirmOverlay').style.display = 'none';
+      var done = r.scheduled ? ('Done. The email to ' + who + ' is scheduled for ' + r.when + '.') : ('Sent. The email to ' + who + ' is on its way.');
+      _emailDraft = null; _emailSending = false;
+      respond(done, '');
+    } else {
+      var msg = (r && r.error) || 'It did not send.';
+      if (/expired/i.test(msg)) msg = 'It may already have gone. Check your sent mail before sending again.';
+      st.textContent = msg; _emailSending = false; btn.disabled = false;
+      speak(msg);
+    }
+  }).catch(function() {
+    st.textContent = 'No answer from the server. Check your sent mail before trying again.';
+    _emailSending = false; btn.disabled = false;
+  });
+}
+
+function emailConfirmCancel() {
+  document.getElementById('emailConfirmOverlay').style.display = 'none';
+  _emailDraft = null; _emailSending = false;
+  respond('Cancelled. Nothing was sent.', '');
+}
+
+function emailConfirmChange() {
+  document.getElementById('ecStatus').textContent = 'Tell me what to change (speak or type it in the main box).';
+  speak('What should I change?');
+}
+
+function emailReviseDraft(text) {
+  if (!_emailDraft) return;
+  var st = document.getElementById('ecStatus'); st.textContent = 'Updating the draft…';
+  var qs = 'draftEmail&draftId=' + encodeURIComponent(_emailDraft.draftId) + '&instruction=' + encodeURIComponent(text) +
+           '&user=' + encodeURIComponent(jarvisUser);
+  callBackend(qs).then(function(d) {
+    if (d && d.ok) showEmailDraft(d);
+    else { st.textContent = (d && d.error) || 'Could not update the draft.'; speak(st.textContent); }
+  }).catch(function() { st.textContent = 'No answer from the server.'; });
+}
+
+// While the confirm box is open every spoken/typed line is for it. Only a clear yes sends.
+function handleEmailConfirmVoice(text) {
+  if (!_emailDraft || document.getElementById('emailConfirmOverlay').style.display === 'none') return false;
+  var t = text.trim();
+  if (/^(yes|yeah|yep|yes please|send|send it|send it now|confirm|go ahead|approved?|do it|okay send( it)?|ok send( it)?)\W*$/i.test(t)) { emailConfirmSend(); return true; }
+  if (/^(no|nope|cancel|don'?t send|do not send|stop|discard|never ?mind|forget it)\W*$/i.test(t)) { emailConfirmCancel(); return true; }
+  emailReviseDraft(t);
+  return true;
+}
+
+// Called from handleCommand. Returns true when it handled the line.
+function handleEmailVoice(text) {
+  var t = text.toLowerCase().trim();
+  if (handleEmailConfirmVoice(text)) return true;
+
+  // waiting for a recipient
+  if (_emailAwaitRecipient) {
+    if (/^(cancel|never ?mind|forget it|stop)\W*$/.test(t)) { _emailAwaitRecipient = null; respond('Cancelled.', ''); return true; }
+    var r = resolveRecipientOrNull(text);
+    if (r) { startEmailDraft(_emailAwaitRecipient, r); return true; }
+    respond('I did not catch who that is. Say Luanne, Johan or yahoo, or type the email address.', '');
+    return true;
+  }
+
+  // reply to the open email
+  if (_emailOpen && /^(reply|respond|answer)\b/.test(t)) {
+    startEmailReply(text.replace(/^(reply|respond|answer)( to (it|that|this|him|her|them))?[,:]?\s*/i, '') || 'Reply politely');
+    return true;
+  }
+
+  // inbox: "any new emails", "check my mail", "read my emails"
+  var ord = t.match(/\b(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\b|(?:email|mail|number|no\.?)\s*(\d)\b/);
+  if (/\bread\b/.test(t) && ord && _emailList.length) {
+    var map = { first:1, '1st':1, second:2, '2nd':2, third:3, '3rd':3, fourth:4, '4th':4, fifth:5, '5th':5 };
+    var n = ord[1] ? map[ord[1]] : parseInt(ord[2], 10);
+    if (n >= 1 && n <= _emailList.length) { openEmailMessage(_emailList[n - 1].id, true); return true; }
+  }
+  var composeStart = /^(please |can you |could you )?(email|mail|send|draft|compose|write)\b/.test(t) || /^tell (luanne|luann|anne|johan)\b/.test(t);
+  var inboxIntent = !composeStart && (/\binbox\b/.test(t) || /\b(any|new|unread|check|read|open|show|got|have i)\b.{0,25}\b(e-?mails?|mails?|messages)\b/.test(t) ||
+                    /\be-?mails?\b.{0,15}\b(came|come|arrived|received|waiting)\b/.test(t));
+  if (inboxIntent) { emailVoiceSummary(); return true; }
+
+  // compose / send
+  var sendIntent = (composeStart && (/\be-?mail\b|\bmail\b|\bmessage\b|\breport\b|\boverview\b|\bleads?\b|\bcontractors?\b|\bfinancial/.test(t) || /^tell /.test(t))) ||
+                   /\b(can|could|please) (you )?e-?mail\b/.test(t) || /\bmail me\b/.test(t);
+  if (sendIntent) {
+    startEmailDraft(text);
+    return true;
+  }
+  return false;
+}
+
+function emailVoiceSummary() {
+  respond('Checking your mailboxes.', '');
+  callBackend('getInboxSummary').then(function(s) {
+    if (!s || s.error) { respond('I could not check the mailboxes right now.', ''); return; }
+    var total = (s.jarvis || 0) + (s.johan || 0);
+    var msg;
+    if (!total) {
+      msg = 'No new external emails, ' + jarvisUserTitle + '.';
+      if (s.johanSetupNeeded) msg += ' The Brisksure mailbox is not connected yet.';
+    } else {
+      msg = 'You have ' + total + ' new external email' + (total > 1 ? 's' : '') + '. ';
+      (s.items || []).slice(0, 3).forEach(function(it) { msg += 'From ' + it.from + ': ' + it.subject + '. '; });
+      msg += 'Say "read the first one" to hear it.';
+    }
+    openEmailPanel((s.johan || 0) > (s.jarvis || 0) ? 'johan' : 'jarvis');
+    respond(msg, '');
+  }).catch(function() { respond('I could not reach the server to check email.', ''); });
+}
+
+// ── Inbox panel ──
+function openEmailPanel(tab) {
+  document.getElementById('emailPanelOverlay').style.display = 'flex';
+  switchEmailTab(tab || 'jarvis');
+}
+function closeEmailPanel() { document.getElementById('emailPanelOverlay').style.display = 'none'; _emailOpen = null; }
+function emailRefresh() { if (_emailOpen) openEmailMessage(_emailOpen.id, false); else loadEmailList(); }
+
+function switchEmailTab(tab) {
+  _emailTab = tab; _emailOpen = null;
+  var on = 'background:rgba(0,212,255,0.18);border:1px solid #00d4ff;color:#00d4ff;';
+  var off = 'background:transparent;border:1px solid #ffffff22;color:#94a3b8;';
+  var base = 'flex:1;padding:9px;border-radius:8px;font-size:0.78rem;font-weight:700;letter-spacing:1px;cursor:pointer;';
+  document.getElementById('emTabJarvis').style.cssText = base + (tab === 'jarvis' ? on : off);
+  document.getElementById('emTabJohan').style.cssText  = base + (tab === 'johan' ? on : off);
+  loadEmailList();
+}
+
+function loadEmailList() {
+  var box = document.getElementById('emailPanelContent');
+  box.innerHTML = '<div style="color:#64748b;text-align:center;padding:30px;">Loading…</div>';
+  callBackend('getInbox&mailbox=' + _emailTab).then(function(r) {
+    if (!r || r.error) { box.innerHTML = '<div style="color:#ff6666;padding:20px;">Could not load: ' + escHtml((r && r.error) || 'no answer') + '</div>'; return; }
+    if (r.setupNeeded) {
+      box.innerHTML = '<div style="color:#ffaa00;padding:16px;line-height:1.5;">The Brisksure mailbox is not connected yet.<br><br>1. In johan@brisksure.co.za set forwarding to <b>ragzjohan+johan@gmail.com</b>.<br>2. In ragzjohan@gmail.com make a filter: To = ragzjohan+johan@gmail.com, apply label <b>Johan-Mail</b>.<br>The first forwarded email creates the label.</div>';
+      return;
+    }
+    _emailList = r.items || [];
+    if (!_emailList.length) { box.innerHTML = '<div style="color:#64748b;text-align:center;padding:30px;">No external emails in the last 14 days.</div>'; return; }
+    box.innerHTML = _emailList.map(function(it, i) {
+      return '<div onclick="openEmailMessage(\'' + it.id + '\', false)" style="cursor:pointer;padding:10px 12px;margin-bottom:8px;border-radius:10px;border:1px solid ' + (it.unread ? '#00d4ff66' : '#ffffff14') + ';background:' + (it.unread ? 'rgba(0,212,255,0.06)' : 'rgba(255,255,255,0.02)') + ';">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;"><span style="color:#fff;font-weight:' + (it.unread ? '700' : '400') + ';font-size:0.88rem;">' + (i + 1) + '. ' + escHtml(it.from) + '</span><span style="color:#64748b;font-size:0.7rem;white-space:nowrap;">' + escHtml(it.date) + '</span></div>' +
+        '<div style="color:#00d4ff;font-size:0.82rem;margin-top:2px;">' + escHtml(it.subject) + (it.hasAttachment ? ' 📎' : '') + '</div>' +
+        '<div style="color:#94a3b8;font-size:0.76rem;margin-top:3px;">' + escHtml(it.snippet) + '</div></div>';
+    }).join('');
+  }).catch(function() { box.innerHTML = '<div style="color:#ff6666;padding:20px;">No answer from the server.</div>'; });
+}
+
+function openEmailMessage(id, readAloud) {
+  var box = document.getElementById('emailPanelContent');
+  document.getElementById('emailPanelOverlay').style.display = 'flex';
+  box.innerHTML = '<div style="color:#64748b;text-align:center;padding:30px;">Opening…</div>';
+  callBackend('readEmail&id=' + encodeURIComponent(id)).then(function(m) {
+    if (!m || !m.ok) { box.innerHTML = '<div style="color:#ff6666;padding:20px;">' + escHtml((m && m.error) || 'Could not open that email.') + '</div>'; return; }
+    _emailOpen = m;
+    box.innerHTML =
+      '<button onclick="loadEmailBack()" style="background:none;border:none;color:#00d4ff;cursor:pointer;font-size:0.8rem;margin-bottom:8px;">← BACK</button>' +
+      '<div style="color:#fff;font-size:1rem;font-weight:700;">' + escHtml(m.subject) + '</div>' +
+      '<div style="color:#94a3b8;font-size:0.78rem;margin:4px 0 10px;">' + escHtml(m.from) + ' &lt;' + escHtml(m.fromEmail) + '&gt;<br>' + escHtml(m.date) + '</div>' +
+      (m.attachments && m.attachments.length ? '<div style="color:#ffaa00;font-size:0.76rem;margin-bottom:8px;">📎 ' + escHtml(m.attachments.join(', ')) + '</div>' : '') +
+      '<div style="white-space:pre-wrap;color:#e2e8f0;font-size:0.88rem;line-height:1.5;background:#0d0d1a;border-radius:8px;padding:10px;">' + escHtml(m.body) + (m.truncated ? '\n\n[shortened]' : '') + '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px;">' +
+      '<button onclick="emailReadAloud()" style="flex:1;padding:10px;border-radius:8px;background:rgba(0,212,255,0.12);border:1px solid #00d4ff66;color:#00d4ff;font-weight:700;cursor:pointer;">🔊 READ ALOUD</button>' +
+      '<button onclick="emailReplyPrompt()" style="flex:1;padding:10px;border-radius:8px;background:rgba(255,170,0,0.12);border:1px solid #ffaa0088;color:#ffaa00;font-weight:700;cursor:pointer;">↩ REPLY</button></div>' +
+      '<div id="emailReplyBox" style="display:none;margin-top:10px;"><input id="emailReplyText" type="text" placeholder="What should the reply say?" style="width:100%;background:#0d0d1a;border:1px solid #ffaa0066;border-radius:8px;padding:9px 12px;color:#fff;font-size:0.9rem;outline:none;">' +
+      '<button onclick="emailReplyGo()" style="margin-top:8px;width:100%;padding:10px;border-radius:8px;background:rgba(255,170,0,0.15);border:1px solid #ffaa00;color:#ffaa00;font-weight:700;cursor:pointer;">WRITE THE REPLY (I will ask before sending)</button></div>';
+    if (readAloud) emailReadAloud();
+  }).catch(function() { box.innerHTML = '<div style="color:#ff6666;padding:20px;">No answer from the server.</div>'; });
+}
+function loadEmailBack() { _emailOpen = null; loadEmailList(); }
+
+function emailReadAloud() {
+  if (!_emailOpen) return;
+  var m = _emailOpen;
+  speak('Email from ' + m.from + '. Subject: ' + m.subject + '. ' + m.body.replace(/\s+/g, ' ').substring(0, 1800) +
+        (m.truncated ? ' The rest is cut short.' : '') + ' Say reply, followed by what to say, or close.');
+}
+function emailReplyPrompt() {
+  document.getElementById('emailReplyBox').style.display = 'block';
+  document.getElementById('emailReplyText').focus();
+}
+function emailReplyGo() {
+  var v = document.getElementById('emailReplyText').value.trim();
+  if (!v) return;
+  startEmailReply(v);
+}
+
+// ── New-mail alert (checks every 5 minutes, speaks only mail it has not announced) ──
+var _emailSeen = {};
+try { _emailSeen = JSON.parse(localStorage.getItem('jarvisEmailSeen') || '{}'); } catch (e) { _emailSeen = {}; }
+var _emailFirstPoll = true;
+function setEmailBadge(n) {
+  var el = document.querySelector('#emailOrbBtn .ob-sub');
+  if (el) el.textContent = n > 0 ? (n + ' new') : 'Read & reply';
+  window._emailBadgeN = n;
+}
+function pollExternalEmail() {
+  if (!jarvisUser || document.getElementById('emailConfirmOverlay').style.display === 'flex') return;
+  callBackend('getInboxSummary').then(function(s) {
+    if (!s || s.error) return;
+    var total = (s.jarvis || 0) + (s.johan || 0);
+    setEmailBadge(total);
+    var fresh = (s.items || []).filter(function(it) { return !_emailSeen[it.id]; });
+    var firstEver = Object.keys(_emailSeen).length === 0 && _emailFirstPoll;
+    fresh.forEach(function(it) { _emailSeen[it.id] = 1; });
+    try { localStorage.setItem('jarvisEmailSeen', JSON.stringify(_emailSeen)); } catch (e) {}
+    _emailFirstPoll = false;
+    if (!fresh.length || firstEver) return;
+    var msg = fresh.length === 1 ? 'New email from ' + fresh[0].from + ': ' + fresh[0].subject + '.'
+                                 : fresh.length + ' new emails. Latest from ' + fresh[0].from + ': ' + fresh[0].subject + '.';
+    document.getElementById('responseBody').textContent = '✉️ ' + msg;
+    speak(msg + ' Say check my email to see them.');
+  }).catch(function() {});
+}
+window.addEventListener('load', function() {
+  setTimeout(pollExternalEmail, 20000);
+  setInterval(pollExternalEmail, 5 * 60 * 1000);
+});
+
 </script>
 
 <!-- ── FINANCIAL POPUP MODAL ── -->
