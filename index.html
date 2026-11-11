@@ -2612,7 +2612,8 @@ function runDiagnostics() {
   ];
 
   var results = [];
-  var pending = endpoints.length;
+  var serverResult = null;
+  var pending = endpoints.length + 1;   // + the server-side checks
 
   endpoints.forEach(function(ep) {
     var start = Date.now();
@@ -2654,6 +2655,16 @@ function runDiagnostics() {
     });
   });
 
+  // Server-side checks: buyers, buyer form, stock app, valuation form, financial lock,
+  // Gemini live test, scheduled checks, Gmail, lead form, switches, security
+  callBackend('getDiagnostics').then(function(d) {
+    serverResult = d || { success: false, error: 'no answer' };
+    checkDone();
+  }).catch(function() {
+    serverResult = { success: false, error: 'timed out' };
+    checkDone();
+  });
+
   function checkDone() {
     pending--;
     var current = lines.slice();
@@ -2664,30 +2675,55 @@ function runDiagnostics() {
         current.push('  ' + r.name + ': ✗ ' + r.status);
       }
     });
+    var srvChecks = (serverResult && serverResult.success && serverResult.checks) ? serverResult.checks : [];
+    if (serverResult) {
+      current.push('─'.repeat(42));
+      current.push('SYSTEM CHECKS');
+      if (!srvChecks.length) {
+        current.push('  ✗ Server checks did not complete: ' + (serverResult.error || 'unknown'));
+      }
+      srvChecks.forEach(function(c) {
+        var icon = c.status === 'OK' ? '✓' : (c.status === 'INFO' ? 'ℹ' : (c.status === 'WARN' ? '⚠' : '✗'));
+        current.push('  ' + icon + ' ' + c.name + ': ' + c.detail);
+      });
+    }
     if (pending > 0) {
       current.push('  … waiting for ' + pending + ' more');
     } else {
       current.push('─'.repeat(42));
-      current.push('GEMINI STATUS  : ' + (window._lastGeminiStatus || 'Unknown — run a voice/text query first'));
+      var gu = serverResult && serverResult.gemini;
+      if (gu) {
+        var hrs = Math.floor(gu.resetsInMinutes / 60), mins = gu.resetsInMinutes % 60;
+        current.push('GEMINI MODEL  : ' + gu.model);
+        current.push('GEMINI USAGE  : ' + gu.used + ' of ' + gu.limit + ' requests used today · ' + gu.remaining + ' left');
+        current.push('GEMINI RESETS : ' + gu.resetsAt + ' SAST (in ' + hrs + 'h ' + mins + 'm)' +
+                     (gu.quotaHit ? ' · quota was hit at ' + gu.quotaHit : ''));
+        current.push('GEMINI NOTE   : counts the calls Jarvis makes. Google shows no live figure; AI Studio has the exact one.');
+      }
+      current.push('LAST QUERY     : ' + (window._lastGeminiStatus || 'none yet this session'));
       current.push('─'.repeat(42));
       current.push('END OF REPORT');
 
       // ── SPEAK the diagnostic summary aloud ──────────────────
       // speak() uses only window.speechSynthesis — 100% independent of Gemini API
-      var okCount  = results.filter(function(r){ return r.status === 'OK'; }).length;
-      var total    = results.length;
-      var geminiOk = window._lastGeminiStatus && /^OK/i.test(window._lastGeminiStatus);
+      var failedNames = results.filter(function(r){ return r.status !== 'OK'; }).map(function(r){ return r.name.trim(); });
+      var warnNames = [];
+      var okCount = results.length - failedNames.length;
+      var total   = results.length;
+      if (!srvChecks.length) { failedNames.push('server checks'); total += 1; }
+      srvChecks.forEach(function(c) {
+        total++;
+        if (c.status === 'FAIL') failedNames.push(c.name);
+        else { okCount++; if (c.status === 'WARN') warnNames.push(c.name); }
+      });
       var spokenSummary =
         'Diagnostics complete. ' +
         okCount + ' of ' + total + ' systems online. ' +
-        'Voice engine: ' + (window.speechSynthesis ? 'active' : 'unavailable') + '. ' +
-        'Gemini A I: ' + (geminiOk ? 'OK' : 'unknown — run a query to test') + '.';
-      if (okCount < total) {
-        var failedNames = results
-          .filter(function(r){ return r.status !== 'OK'; })
-          .map(function(r){ return r.name.trim(); });
-        spokenSummary += ' ' + (total - okCount) + ' system(s) did not respond: ' + failedNames.join(', ') + '.';
-      }
+        'Voice engine: ' + (window.speechSynthesis ? 'active' : 'unavailable') + '.';
+      if (failedNames.length) spokenSummary += ' ' + failedNames.length + ' failed: ' + failedNames.join(', ') + '.';
+      if (warnNames.length) spokenSummary += ' ' + warnNames.length + ' warning' + (warnNames.length > 1 ? 's' : '') + ': ' + warnNames.join(', ') + '.';
+      var gu2 = serverResult && serverResult.gemini;
+      if (gu2) spokenSummary += ' Gemini has used ' + gu2.used + ' of ' + gu2.limit + ' requests today, ' + gu2.remaining + ' left.';
       speak(spokenSummary);
     }
     diagReport = current.join('\n');
