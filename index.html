@@ -2105,7 +2105,7 @@ function handleCommand(text){
       'Plain sentences only — no bullet points, no asterisks, no markdown. '+
       'Keep replies under 60 words unless asked for detail. '+
       'You are intelligent, sharp and proactive — give insights, analysis and recommendations freely. '+
-      'You CAN send emails on Johan\'s behalf — if asked to email a report or overview, confirm you are sending it. '+
+      'You cannot send an email directly from this chat. Emails are drafted and approved by Johan in a separate step. If a request to email something reaches you here, never say it has been sent or scheduled: tell Johan in one sentence to say it again as for example "email me the overview tomorrow at 8". '+
       'You CANNOT send WhatsApp messages or make calls — if asked, say so in one sentence then move on. '+
       'Today: '+new Date().toDateString()+'.\n\n';
 
@@ -3798,8 +3798,10 @@ function handleEmailConfirmVoice(text) {
 
 // Called from handleCommand. Returns true when it handled the line.
 function handleEmailVoice(text) {
-  var t = text.toLowerCase().trim();
   if (handleEmailConfirmVoice(text)) return true;
+  // drop a spoken wake word at the start ("Jarvis, ...", "hey Jarvis ...")
+  text = text.replace(/^\s*(?:hey|hi|ok|okay)?[\s,]*jarvis[\s,:.!-]*/i, '').trim();
+  var t = text.toLowerCase().trim();
 
   // waiting for a recipient
   if (_emailAwaitRecipient) {
@@ -3816,21 +3818,26 @@ function handleEmailVoice(text) {
     return true;
   }
 
-  // inbox: "any new emails", "check my mail", "read my emails"
+  // inbox: "any new emails", "check my mail", "read the first one"
   var ord = t.match(/\b(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\b|(?:email|mail|number|no\.?)\s*(\d)\b/);
   if (/\bread\b/.test(t) && ord && _emailList.length) {
     var map = { first:1, '1st':1, second:2, '2nd':2, third:3, '3rd':3, fourth:4, '4th':4, fifth:5, '5th':5 };
     var n = ord[1] ? map[ord[1]] : parseInt(ord[2], 10);
     if (n >= 1 && n <= _emailList.length) { openEmailMessage(_emailList[n - 1].id, true); return true; }
   }
-  var composeStart = /^(please |can you |could you )?(email|mail|send|draft|compose|write)\b/.test(t) || /^tell (luanne|luann|anne|johan)\b/.test(t);
-  var inboxIntent = !composeStart && (/\binbox\b/.test(t) || /\b(any|new|unread|check|read|open|show|got|have i)\b.{0,25}\b(e-?mails?|mails?|messages)\b/.test(t) ||
+  var hasEmailWord = /\be-?mails?\b|\bmail\b/.test(t);
+  var sendVerb = /\b(send|write|draft|compose|forward|shoot|fire off)\b/.test(t) ||
+                 /^(please |can you |could you |would you )?(e-?mail|mail)\b(?!s)/.test(t) ||
+                 /\b(want|need|like|asking) (you )?to (e-?mail|mail)\b|\b(can|could|would|will|please) you (e-?mail|mail)\b|\be-?mail (me|luanne|luann|anne|johan|him|her|them)\b/.test(t);
+  var inboxIntent = !sendVerb && (/\binbox\b/.test(t) || /\b(any|new|unread|check|read|open|show|got|have i)\b.{0,25}\b(e-?mails?|mails?|messages)\b/.test(t) ||
                     /\be-?mails?\b.{0,15}\b(came|come|arrived|received|waiting)\b/.test(t));
   if (inboxIntent) { emailVoiceSummary(); return true; }
 
-  // compose / send
-  var sendIntent = (composeStart && (/\be-?mail\b|\bmail\b|\bmessage\b|\breport\b|\boverview\b|\bleads?\b|\bcontractors?\b|\bfinancial/.test(t) || /^tell /.test(t))) ||
-                   /\b(can|could|please) (you )?e-?mail\b/.test(t) || /\bmail me\b/.test(t);
+  // compose / send: any sentence that asks for an email to be sent or written
+  var sendIntent =
+      (sendVerb && hasEmailWord && !/\b(read|check|show)\b.{0,20}\be-?mails?\b/.test(t)) ||
+      /\b(send|mail)\b.{0,40}\b(overview|briefing|report|summary|leads?|financials?)\b/.test(t) ||
+      /^tell (luanne|luann|anne|johan)\b/.test(t);
   if (sendIntent) {
     startEmailDraft(text);
     return true;
