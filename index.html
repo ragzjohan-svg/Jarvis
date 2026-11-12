@@ -551,6 +551,7 @@ const COMMANDS = [
   { icon:'🏷️', text:'VALUATIONS', sub:'Requests',         cmd:'__VALUATIONS__' },
   { icon:'🎯', text:'BUYERS',     sub:'List & matches',   cmd:'__BUYERS__' },
   { icon:'✉️', text:'EMAIL',      sub:'Read & reply',     cmd:'__EMAIL__' },
+  { icon:'🗓️', text:'CALENDAR',   sub:'Schedule',         cmd:'__CALENDAR__' },
 ];
 
 function buildOrbital() {
@@ -622,6 +623,7 @@ function buildOrbital() {
                         cmd.cmd === '__VALUATIONS__'   ? openValuationsPanel() :
                         cmd.cmd === '__BUYERS__'       ? openBuyersPanel() :
                         cmd.cmd === '__EMAIL__'        ? openEmailPanel('jarvis') :
+                        cmd.cmd === '__CALENDAR__'     ? openCalendarPanel() :
                         cmd.cmd === '__STOCK_REVIEW__' ? openStockReviewPanel() :
                         handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
@@ -2012,6 +2014,7 @@ function handleCommand(text){
 
   // ── EMAIL (approve-before-send, inbox) ──
   if (handleEmailVoice(text)) return;
+  if (handleCalendarVoice(text)) return;
 
   setOrbState('thinking');
   document.getElementById('responseBody').textContent = 'Thinking…';
@@ -2890,6 +2893,52 @@ function copyDiagnostics() {
       </div>
     </div>
     <div id="stockReviewContent" style="overflow-y:auto;padding:16px;flex:1;"></div>
+  </div>
+</div>
+
+<!-- ── CALENDAR CONFIRM OVERLAY (nothing is added until ADD / "yes") ── -->
+<div id="calConfirmOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:10001;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1120;border:1px solid rgba(0,212,255,0.45);border-radius:16px;width:95%;max-width:460px;box-shadow:0 0 50px rgba(0,212,255,0.08);">
+    <div style="padding:16px 18px 10px;border-bottom:1px solid rgba(0,212,255,0.2);">
+      <div style="font-family:'Orbitron',sans-serif;font-size:0.8rem;color:#00d4ff;letter-spacing:3px;">🗓️ ADD TO CALENDAR?</div>
+      <div style="font-size:0.72rem;color:#94a3b8;margin-top:4px;">Say "yes" to add it, "cancel", or tell me what to change.</div>
+    </div>
+    <div style="padding:14px 18px;">
+      <div id="ccTitle" style="color:#fff;font-size:1.05rem;font-weight:700;margin-bottom:6px;"></div>
+      <div id="ccWhen" style="color:#00d4ff;font-size:0.9rem;margin-bottom:4px;"></div>
+      <div id="ccWhere" style="color:#94a3b8;font-size:0.85rem;margin-bottom:4px;"></div>
+      <div id="ccRem" style="color:#ffaa00;font-size:0.78rem;"></div>
+      <div id="ccStatus" style="font-size:0.78rem;color:#00d4ff;margin-top:8px;min-height:1em;"></div>
+    </div>
+    <div style="padding:10px 18px 16px;display:flex;gap:8px;border-top:1px solid rgba(0,212,255,0.2);">
+      <button id="ccAdd" onclick="calConfirmAdd()" style="flex:2;padding:11px;border-radius:8px;background:rgba(0,255,136,0.15);border:1px solid #00ff88;color:#00ff88;font-weight:700;letter-spacing:1px;cursor:pointer;">ADD</button>
+      <button onclick="calConfirmChange()" style="flex:1;padding:11px;border-radius:8px;background:rgba(0,212,255,0.1);border:1px solid #00d4ff66;color:#00d4ff;font-weight:700;cursor:pointer;">CHANGE</button>
+      <button onclick="calConfirmCancel()" style="flex:1;padding:11px;border-radius:8px;background:rgba(255,60,60,0.1);border:1px solid #ff4444aa;color:#ff6666;font-weight:700;cursor:pointer;">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CALENDAR PANEL ── -->
+<div id="calPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1120;border:1px solid rgba(0,212,255,0.3);border-radius:16px;width:95%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(0,212,255,0.08);">
+    <div style="padding:16px 18px 12px;border-bottom:1px solid rgba(0,212,255,0.12);flex-shrink:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:0.85rem;color:#00d4ff;letter-spacing:3px;">🗓️ CALENDAR</div>
+          <div style="font-size:0.72rem;color:#64748b;margin-top:3px;">Next 30 days · phone reminders: 1 day and 1 hour before</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="loadCalendar()" style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.25);color:#00d4ff;border-radius:7px;padding:7px 12px;cursor:pointer;">↺</button>
+          <button onclick="closeCalendarPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input id="calAddText" type="text" placeholder="e.g. Hino viewing Friday 10am in Swellendam" onkeydown="if(event.key==='Enter')calAddFromPanel()"
+          style="flex:1;background:#0d0d1a;border:1px solid #00d4ff44;border-radius:8px;padding:9px 12px;color:#fff;font-size:0.9rem;outline:none;">
+        <button onclick="calAddFromPanel()" style="padding:9px 14px;border-radius:8px;background:rgba(0,212,255,0.15);border:1px solid #00d4ff;color:#00d4ff;font-weight:700;cursor:pointer;">ADD</button>
+      </div>
+    </div>
+    <div id="calPanelContent" style="overflow-y:auto;padding:12px 16px 16px;flex:1;min-height:0;"></div>
   </div>
 </div>
 
@@ -3972,6 +4021,187 @@ window.addEventListener('load', function() {
   setTimeout(pollExternalEmail, 20000);
   setInterval(pollExternalEmail, 5 * 60 * 1000);
 });
+
+
+// ══ JARVIS CALENDAR: add with approval, agenda, reminders from Google Calendar ══
+var _calDraft = null;
+var _calSending = false;
+var _calEvents = [];
+
+function startCalendarDraft(text) {
+  respond('Checking that for the calendar.', '');
+  callBackend('draftCalendarEvent&instruction=' + encodeURIComponent(text)).then(showCalDraft).catch(function() {
+    respond('I could not reach the server. Nothing was added.', '');
+  });
+}
+
+function showCalDraft(d) {
+  if (!d || !d.ok) { respond((d && d.error) ? d.error : 'I could not work that out. Nothing was added.', ''); return; }
+  _calDraft = d; _calSending = false;
+  document.getElementById('ccTitle').textContent = d.title;
+  document.getElementById('ccWhen').textContent = d.when;
+  document.getElementById('ccWhere').textContent = d.location ? '📍 ' + d.location : '';
+  document.getElementById('ccRem').textContent = '🔔 Phone reminders: ' + d.reminders;
+  document.getElementById('ccStatus').textContent = '';
+  document.getElementById('ccAdd').disabled = false;
+  document.getElementById('calConfirmOverlay').style.display = 'flex';
+  setOrbState('idle');
+  speak('I will add ' + d.title + ', ' + d.when + (d.location ? ', at ' + d.location : '') + '. Reminders a day before and an hour before. Shall I add it?');
+}
+
+function calConfirmAdd() {
+  if (!_calDraft || _calSending) return;
+  _calSending = true;
+  document.getElementById('ccAdd').disabled = true;
+  document.getElementById('ccStatus').textContent = 'Adding…';
+  var title = _calDraft.title;
+  callBackend('createCalendarEvent&draftId=' + encodeURIComponent(_calDraft.draftId)).then(function(r) {
+    if (r && r.ok) {
+      document.getElementById('calConfirmOverlay').style.display = 'none';
+      _calDraft = null; _calSending = false;
+      respond('Done. ' + title + ' is in your calendar, ' + r.when + '. You will be reminded a day before and an hour before.', '');
+      if (document.getElementById('calPanelOverlay').style.display === 'flex') loadCalendar();
+    } else {
+      var msg = (r && r.error) || 'It was not added.';
+      document.getElementById('ccStatus').textContent = msg;
+      _calSending = false; document.getElementById('ccAdd').disabled = false; speak(msg);
+    }
+  }).catch(function() {
+    document.getElementById('ccStatus').textContent = 'No answer from the server. Check your calendar before trying again.';
+    _calSending = false; document.getElementById('ccAdd').disabled = false;
+  });
+}
+
+function calConfirmCancel() {
+  document.getElementById('calConfirmOverlay').style.display = 'none';
+  _calDraft = null; _calSending = false;
+  respond('Cancelled. Nothing was added.', '');
+}
+function calConfirmChange() {
+  document.getElementById('ccStatus').textContent = 'Tell me what to change (speak or type it in the main box).';
+  speak('What should I change?');
+}
+function calRevise(text) {
+  if (!_calDraft) return;
+  document.getElementById('ccStatus').textContent = 'Updating…';
+  callBackend('draftCalendarEvent&draftId=' + encodeURIComponent(_calDraft.draftId) + '&instruction=' + encodeURIComponent(text)).then(function(d) {
+    if (d && d.ok) showCalDraft(d);
+    else { document.getElementById('ccStatus').textContent = (d && d.error) || 'Could not update it.'; speak(document.getElementById('ccStatus').textContent); }
+  }).catch(function() { document.getElementById('ccStatus').textContent = 'No answer from the server.'; });
+}
+
+function handleCalConfirmVoice(text) {
+  if (!_calDraft || document.getElementById('calConfirmOverlay').style.display === 'none') return false;
+  var t = text.trim();
+  if (/^(yes|yeah|yep|yes please|add|add it|confirm|go ahead|approved?|do it|okay|ok|okay add( it)?|ok add( it)?)\W*$/i.test(t)) { calConfirmAdd(); return true; }
+  if (/^(no|nope|cancel|don'?t add|do not add|stop|discard|never ?mind|forget it)\W*$/i.test(t)) { calConfirmCancel(); return true; }
+  calRevise(t);
+  return true;
+}
+
+// Called from handleCommand. Returns true when it handled the line.
+function handleCalendarVoice(text) {
+  if (handleCalConfirmVoice(text)) return true;
+  text = text.replace(/^\s*(?:hey|hi|ok|okay)?[\s,]*jarvis[\s,:.!-]*/i, '').trim();
+  var t = text.toLowerCase();
+  var calWord = /\b(calendar|diary|schedule|appointments?|meetings?)\b/;
+
+  // add: "put the Hino viewing in my calendar for Friday at 10", "remind me to call Piet tomorrow at 9"
+  var addVerb = /\b(add|put|schedule|book|set up|create|make|diarise|diarize|note)\b/.test(t);
+  var addIntent = (addVerb && /\b(calendar|diary|appointment|meeting|reminder|event)\b/.test(t)) || /\bremind me\b/.test(t);
+  var askIntent = /\b(what|show|read|check|open|do i have|have i got|any)\b/.test(t) && calWord.test(t) && !addVerb;
+  if (addIntent && !askIntent) { startCalendarDraft(text); return true; }
+
+  // agenda: "what's on my calendar today", "show my calendar", "do I have meetings tomorrow"
+  if (askIntent || /\bmy (calendar|diary)\b/.test(t)) {
+    var range = /\btomorrow\b/.test(t) ? 'tomorrow' : /\btoday\b|\bto-?day\b/.test(t) ? 'today' : 'week';
+    calSpeakAgenda(range);
+    return true;
+  }
+  return false;
+}
+
+function calToday_() {
+  var d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+function calSpeakAgenda(range) {
+  respond('Checking your calendar.', '');
+  callBackend('getCalendar&days=10').then(function(r) {
+    if (!r || !r.ok) { respond('I could not read the calendar right now.', ''); return; }
+    var today = calToday_();
+    var tm = new Date(Date.now() + 86400000);
+    var tomorrow = tm.getFullYear() + '-' + ('0' + (tm.getMonth() + 1)).slice(-2) + '-' + ('0' + tm.getDate()).slice(-2);
+    var wk = new Date(Date.now() + 7 * 86400000);
+    var weekEnd = wk.getFullYear() + '-' + ('0' + (wk.getMonth() + 1)).slice(-2) + '-' + ('0' + wk.getDate()).slice(-2);
+    var list = r.events.filter(function(e) {
+      return range === 'today' ? e.date === today : range === 'tomorrow' ? e.date === tomorrow : (e.date >= today && e.date <= weekEnd);
+    });
+    var label = range === 'week' ? 'in the next seven days' : range;
+    var msg;
+    if (!list.length) msg = 'Nothing in your calendar ' + (range === 'week' ? label : 'for ' + label) + ', ' + jarvisUserTitle + '.';
+    else {
+      msg = 'You have ' + list.length + ' item' + (list.length > 1 ? 's' : '') + ' ' + (range === 'week' ? label : label) + '. ';
+      list.slice(0, 5).forEach(function(e) {
+        msg += (range === 'week' ? e.dayLabel + ', ' : '') + (e.time ? 'at ' + e.time + ', ' : 'all day, ') + e.title + '. ';
+      });
+      if (list.length > 5) msg += 'And ' + (list.length - 5) + ' more.';
+    }
+    openCalendarPanel();
+    respond(msg, '');
+  }).catch(function() { respond('I could not reach the server to read the calendar.', ''); });
+}
+
+// ── Calendar panel ──
+function openCalendarPanel() {
+  document.getElementById('calPanelOverlay').style.display = 'flex';
+  loadCalendar();
+}
+function closeCalendarPanel() { document.getElementById('calPanelOverlay').style.display = 'none'; }
+
+function loadCalendar() {
+  var box = document.getElementById('calPanelContent');
+  box.innerHTML = '<div style="color:#64748b;text-align:center;padding:30px;">Loading…</div>';
+  callBackend('getCalendar&days=30').then(function(r) {
+    if (!r || !r.ok) {
+      box.innerHTML = '<div style="color:#ff6666;padding:16px;line-height:1.5;">Could not read the calendar: ' + escHtml((r && r.error) || 'no answer') +
+        '<br><br>If this is the first time, open the Jarvis Apps Script project, run <b>authorizeCalendar</b> once, and approve access.</div>';
+      return;
+    }
+    _calEvents = r.events || [];
+    if (!_calEvents.length) { box.innerHTML = '<div style="color:#64748b;text-align:center;padding:30px;">Nothing in the next 30 days.<br>Add something above, or say "put … in my calendar".</div>'; return; }
+    var html = '', lastDay = '';
+    _calEvents.forEach(function(e) {
+      if (e.date !== lastDay) {
+        lastDay = e.date;
+        html += '<div style="color:#00d4ff;font-family:\'Orbitron\',sans-serif;font-size:0.7rem;letter-spacing:2px;margin:12px 0 6px;">' + escHtml(e.dayLabel).toUpperCase() + '</div>';
+      }
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin-bottom:6px;border-radius:10px;border:1px solid #ffffff14;background:rgba(255,255,255,0.03);">' +
+        '<div style="min-width:64px;color:#ffaa00;font-size:0.8rem;">' + (e.time ? escHtml(e.time) + '–' + escHtml(e.endTime) : 'All day') + '</div>' +
+        '<div style="flex:1;"><div style="color:#fff;font-size:0.9rem;">' + escHtml(e.title) + '</div>' +
+        (e.location ? '<div style="color:#94a3b8;font-size:0.75rem;">📍 ' + escHtml(e.location) + '</div>' : '') + '</div>' +
+        '<button data-id="' + escHtml(e.id) + '" data-title="' + escHtml(e.title) + '" onclick="calDelete(this)" title="Delete" style="background:none;border:1px solid #ff444455;color:#ff6666;border-radius:6px;padding:4px 8px;cursor:pointer;">🗑</button></div>';
+    });
+    box.innerHTML = html;
+  }).catch(function() { box.innerHTML = '<div style="color:#ff6666;padding:20px;">No answer from the server.</div>'; });
+}
+
+function calAddFromPanel() {
+  var inp = document.getElementById('calAddText');
+  var v = inp.value.trim();
+  if (!v) return;
+  inp.value = '';
+  startCalendarDraft(v);
+}
+
+function calDelete(btn) {
+  var id = btn.getAttribute('data-id'), title = btn.getAttribute('data-title');
+  if (!window.confirm('Delete "' + title + '" from your calendar?')) return;
+  callBackend('deleteCalendarEvent&id=' + encodeURIComponent(id)).then(function(r) {
+    if (r && r.ok) { respond('Deleted ' + r.title + ' from your calendar.', ''); loadCalendar(); }
+    else respond((r && r.error) || 'I could not delete that.', '');
+  }).catch(function() { respond('No answer from the server.', ''); });
+}
 
 </script>
 
