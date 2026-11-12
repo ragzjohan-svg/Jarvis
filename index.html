@@ -800,6 +800,7 @@ function checkPin() {
     done();
     if (res && res.ok && res.token) {
       jarvisToken = res.token;          // kept in memory only: reload = PIN again
+      preloadData();                    // load leads / contractors / directory now that we have a token
       errEl.textContent = '';
       document.getElementById('pinInput').value = '';
       document.getElementById('pinOverlay').style.display = 'none';
@@ -932,7 +933,7 @@ function preloadData(){
     if(data && !data.error) jarvisCachedContractors = data;
   }).catch(function(){});
 }
-preloadData();
+// preloadData() now runs after the PIN is accepted (see checkPin), so it carries the session token
 
 // Resolve an IC code to a name locally (no URL needed)
 function resolveIC(ic){
