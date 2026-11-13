@@ -232,6 +232,15 @@
     }
     .orb-btn .ob-sub { font-size: 9px; color: var(--muted); line-height: 1.2; }
 
+    /* ── PHONE LAYOUT: globe on top, buttons in a grid below ── */
+    .radial-stage.mobile-grid { aspect-ratio: auto; max-height: none; display: flex; flex-direction: column; align-items: center; }
+    .radial-stage.mobile-grid .globe-wrap { position: static; transform: none; margin: 0 auto 16px; }
+    .radial-stage.mobile-grid #connectorSvg { display: none; }
+    .radial-stage.mobile-grid #orbitalButtons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }
+    .radial-stage.mobile-grid .orb-btn { position: static; transform: none; width: auto; min-width: 0; padding: 10px 4px 8px; }
+    .radial-stage.mobile-grid .orb-btn .ob-text { font-size: 8px; }
+    .radial-stage.mobile-grid .orb-btn .ob-sub { font-size: 10px; }
+
     /* ── CONNECTOR LINES (SVG overlay over radial-stage) ── */
     #connectorSvg {
       position: absolute; inset: 0;
@@ -555,10 +564,39 @@ const COMMANDS = [
   { icon:'📞', text:'SELLERS',    sub:'Stock owners',     cmd:'__SELLERS__' },
 ];
 
+function makeOrbBtn(cmd) {
+  const btn = document.createElement('button');
+  btn.className = 'orb-btn';
+  if (cmd.cmd === '__EMAIL__') btn.id = 'emailOrbBtn';
+  btn.innerHTML = `<span class="ob-icon">${cmd.icon}</span><span class="ob-text">${cmd.text}</span><span class="ob-sub">${cmd.sub}</span>`;
+  btn.onclick = () => cmd.cmd === '__ADD_BUYER__'    ? openBuyerForm()    :
+                      cmd.cmd === '__VIEW_ADS__'     ? openAdsPanel()     :
+                      cmd.cmd === '__DIAGNOSTICS__'  ? runDiagnostics()   :
+                      cmd.cmd === '__TOGGLE_SITE__'  ? toggleSite()       :
+                      cmd.cmd === '__VALUATIONS__'   ? openValuationsPanel() :
+                      cmd.cmd === '__BUYERS__'       ? openBuyersPanel() :
+                      cmd.cmd === '__EMAIL__'        ? openEmailPanel('jarvis') :
+                      cmd.cmd === '__CALENDAR__'     ? openCalendarPanel() :
+                      cmd.cmd === '__SELLERS__'      ? openSellersPanel() :
+                      cmd.cmd === '__STOCK_REVIEW__' ? openStockReviewPanel() :
+                      handleCommand(cmd.cmd);
+
+  return btn;
+}
+
 function buildOrbital() {
   const stage = document.getElementById('radialStage');
   const btnWrap = document.getElementById('orbitalButtons');
   const svg = document.getElementById('connectorSvg');
+  const isPhone = window.innerWidth <= 640;
+  stage.classList.toggle('mobile-grid', isPhone);
+  if (isPhone) {
+    svg.innerHTML = '';
+    btnWrap.innerHTML = '';
+    COMMANDS.forEach(cmd => btnWrap.appendChild(makeOrbBtn(cmd)));
+    if (typeof setEmailBadge === 'function' && window._emailBadgeN) setEmailBadge(window._emailBadgeN);
+    return;
+  }
   const W = stage.offsetWidth || 400;
   const H = stage.offsetHeight || 400;
   const cx = W/2, cy = H/2;
@@ -610,24 +648,10 @@ function buildOrbital() {
     svg.appendChild(dot);
 
     // Button
-    const btn = document.createElement('button');
-    btn.className = 'orb-btn';
+    const btn = makeOrbBtn(cmd);
     btn.style.left = bx + 'px';
     btn.style.top  = by + 'px';
     btn.style.zIndex = '5';
-    if (cmd.cmd === '__EMAIL__') btn.id = 'emailOrbBtn';
-    btn.innerHTML = `<span class="ob-icon">${cmd.icon}</span><span class="ob-text">${cmd.text}</span><span class="ob-sub">${cmd.sub}</span>`;
-    btn.onclick = () => cmd.cmd === '__ADD_BUYER__'    ? openBuyerForm()    :
-                        cmd.cmd === '__VIEW_ADS__'     ? openAdsPanel()     :
-                        cmd.cmd === '__DIAGNOSTICS__'  ? runDiagnostics()   :
-                        cmd.cmd === '__TOGGLE_SITE__'  ? toggleSite()       :
-                        cmd.cmd === '__VALUATIONS__'   ? openValuationsPanel() :
-                        cmd.cmd === '__BUYERS__'       ? openBuyersPanel() :
-                        cmd.cmd === '__EMAIL__'        ? openEmailPanel('jarvis') :
-                        cmd.cmd === '__CALENDAR__'     ? openCalendarPanel() :
-                        cmd.cmd === '__SELLERS__'      ? openSellersPanel() :
-                        cmd.cmd === '__STOCK_REVIEW__' ? openStockReviewPanel() :
-                        handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
   });
   if (typeof setEmailBadge === 'function' && window._emailBadgeN) setEmailBadge(window._emailBadgeN);
@@ -635,7 +659,12 @@ function buildOrbital() {
 
 // Build on load and resize
 window.addEventListener('load', buildOrbital);
-window.addEventListener('resize', buildOrbital);
+var _orbLastW = window.innerWidth;
+window.addEventListener('resize', function() {
+  if (window.innerWidth === _orbLastW) return; // ignore phone address-bar height changes
+  _orbLastW = window.innerWidth;
+  buildOrbital();
+});
 
 // ── PIN LOCK ─────────────────────────────────────────────────
 // PIN is checked on the server (verifyPin) — it is NOT stored in this file.
