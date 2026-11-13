@@ -552,6 +552,7 @@ const COMMANDS = [
   { icon:'🎯', text:'BUYERS',     sub:'List & matches',   cmd:'__BUYERS__' },
   { icon:'✉️', text:'EMAIL',      sub:'Read & reply',     cmd:'__EMAIL__' },
   { icon:'🗓️', text:'CALENDAR',   sub:'Schedule',         cmd:'__CALENDAR__' },
+  { icon:'📞', text:'SELLERS',    sub:'Stock owners',     cmd:'__SELLERS__' },
 ];
 
 function buildOrbital() {
@@ -624,6 +625,7 @@ function buildOrbital() {
                         cmd.cmd === '__BUYERS__'       ? openBuyersPanel() :
                         cmd.cmd === '__EMAIL__'        ? openEmailPanel('jarvis') :
                         cmd.cmd === '__CALENDAR__'     ? openCalendarPanel() :
+                        cmd.cmd === '__SELLERS__'      ? openSellersPanel() :
                         cmd.cmd === '__STOCK_REVIEW__' ? openStockReviewPanel() :
                         handleCommand(cmd.cmd);
     btnWrap.appendChild(btn);
@@ -2942,6 +2944,27 @@ function copyDiagnostics() {
   </div>
 </div>
 
+<!-- ── SELLERS PANEL ── -->
+<div id="sellersPanelOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1120;border:1px solid rgba(37,211,102,0.35);border-radius:16px;width:95%;max-width:560px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(37,211,102,0.08);">
+    <div style="padding:16px 18px 12px;border-bottom:1px solid rgba(37,211,102,0.15);flex-shrink:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:0.85rem;color:#25d366;letter-spacing:3px;">📞 SELLERS</div>
+          <div id="sellersCount" style="font-size:0.72rem;color:#64748b;margin-top:3px;">Registered stock owners</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="loadSellers()" style="background:rgba(37,211,102,0.08);border:1px solid rgba(37,211,102,0.3);color:#25d366;border-radius:7px;padding:7px 12px;cursor:pointer;">↺</button>
+          <button onclick="closeSellersPanel()" style="background:none;border:none;color:#aaa;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>
+        </div>
+      </div>
+      <input id="sellersSearch" type="text" placeholder="Search name, make, model, year…" oninput="renderSellers()"
+        style="width:100%;box-sizing:border-box;background:#0d0d1a;border:1px solid #25d36644;border-radius:8px;padding:9px 12px;color:#fff;font-size:0.9rem;outline:none;">
+    </div>
+    <div id="sellersContent" style="overflow-y:auto;padding:12px 16px 16px;flex:1;min-height:0;"></div>
+  </div>
+</div>
+
 <!-- ── EMAIL CONFIRM OVERLAY (nothing is sent until SEND / "yes") ── -->
 <div id="emailConfirmOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:10001;align-items:center;justify-content:center;padding:16px;">
   <div style="background:#0d1120;border:1px solid rgba(255,170,0,0.45);border-radius:16px;width:95%;max-width:520px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 0 50px rgba(255,170,0,0.08);">
@@ -4192,6 +4215,60 @@ function calAddFromPanel() {
   if (!v) return;
   inp.value = '';
   startCalendarDraft(v);
+}
+
+// ── Sellers panel (stock owners + WhatsApp) ──
+var _sellers = [];
+function openSellersPanel() {
+  document.getElementById('sellersPanelOverlay').style.display = 'flex';
+  document.getElementById('sellersSearch').value = '';
+  loadSellers();
+}
+function closeSellersPanel() { document.getElementById('sellersPanelOverlay').style.display = 'none'; }
+
+function sellerWaNumber(raw) {
+  var d = String(raw || '').replace(/[^0-9]/g, '');
+  if (!d) return '';
+  if (d.indexOf('0027') === 0) d = d.substring(2);
+  if (d.indexOf('27') === 0 && d.length >= 11) return d;
+  if (d.charAt(0) === '0' && d.length === 10) return '27' + d.substring(1);
+  if (d.length === 9) return '27' + d;
+  return d;
+}
+
+function loadSellers() {
+  var box = document.getElementById('sellersContent');
+  box.innerHTML = '<div style="color:#64748b;text-align:center;padding:30px;">Loading…</div>';
+  callBackend('getStock').then(function(r) {
+    var items = (r && r.items) || [];
+    _sellers = items.filter(function(it) { return it.seller; }).sort(function(a, b) { return (b.tsMs || 0) - (a.tsMs || 0); });
+    renderSellers();
+  }).catch(function() { box.innerHTML = '<div style="color:#ff6666;padding:20px;">No answer from the server.</div>'; });
+}
+
+function renderSellers() {
+  var box = document.getElementById('sellersContent');
+  var q = (document.getElementById('sellersSearch').value || '').toLowerCase().trim();
+  var list = _sellers.filter(function(it) {
+    if (!q) return true;
+    return [it.seller, it.make, it.model, it.year, it.contact, it.whatsapp].join(' ').toLowerCase().indexOf(q) > -1;
+  });
+  document.getElementById('sellersCount').textContent = list.length + ' item' + (list.length === 1 ? '' : 's') + (q ? ' found' : ' registered');
+  if (!list.length) { box.innerHTML = '<div style="color:#64748b;text-align:center;padding:30px;">' + (q ? 'No match.' : 'No registered stock yet.') + '</div>'; return; }
+  box.innerHTML = list.map(function(it) {
+    var num = it.whatsapp || it.contact;
+    var wa = sellerWaNumber(num);
+    var btn = wa
+      ? '<a href="https://wa.me/' + wa + '" target="_blank" rel="noopener" title="Open WhatsApp chat" style="display:inline-block;background:#25d366;color:#04230f;font-weight:700;font-size:0.8rem;border-radius:8px;padding:8px 12px;text-decoration:none;white-space:nowrap;">WhatsApp</a>'
+      : '<span style="color:#64748b;font-size:0.75rem;">no number</span>';
+    var what = [it.make, it.model, it.year].filter(Boolean).join(' ');
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:7px;border-radius:10px;border:1px solid #ffffff14;background:rgba(255,255,255,0.03);">' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="color:#fff;font-size:0.92rem;word-break:break-word;">' + escHtml(it.seller) + '</div>' +
+        '<div style="color:#ffaa00;font-size:0.8rem;margin-top:2px;">' + escHtml(what || 'No vehicle details') + '</div>' +
+        '<div style="color:#94a3b8;font-size:0.75rem;margin-top:2px;">' + escHtml(num || '') + '</div>' +
+      '</div>' + btn + '</div>';
+  }).join('');
 }
 
 function calDelete(btn) {
