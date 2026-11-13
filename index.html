@@ -232,14 +232,18 @@
     }
     .orb-btn .ob-sub { font-size: 9px; color: var(--muted); line-height: 1.2; }
 
-    /* ── PHONE LAYOUT: globe on top, buttons in a grid below ── */
-    .radial-stage.mobile-grid { aspect-ratio: auto; max-height: none; display: flex; flex-direction: column; align-items: center; }
-    .radial-stage.mobile-grid .globe-wrap { position: static; transform: none; margin: 0 auto 16px; }
-    .radial-stage.mobile-grid #connectorSvg { display: none; }
-    .radial-stage.mobile-grid #orbitalButtons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }
-    .radial-stage.mobile-grid .orb-btn { position: static; transform: none; width: auto; min-width: 0; padding: 10px 4px 8px; }
-    .radial-stage.mobile-grid .orb-btn .ob-text { font-size: 8px; }
-    .radial-stage.mobile-grid .orb-btn .ob-sub { font-size: 10px; }
+    /* ── PHONE LAYOUT: same orbit, text-only labels on two staggered rings ── */
+    .radial-stage.mobile-orbit .orb-btn {
+      width: auto; background: none; border: none; box-shadow: none; border-radius: 0;
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+      padding: 6px 4px; gap: 2px; white-space: nowrap;
+      -webkit-tap-highlight-color: rgba(212,175,55,0.25);
+    }
+    .radial-stage.mobile-orbit .orb-btn .ob-icon { font-size: 17px; }
+    .radial-stage.mobile-orbit .orb-btn .ob-text { font-size: 7.5px; letter-spacing: 0.6px; text-shadow: 0 0 8px rgba(212,175,55,0.35); }
+    .radial-stage.mobile-orbit .orb-btn .ob-sub { display: none; }
+    .radial-stage.mobile-orbit #emailOrbBtn .ob-sub { display: block; font-size: 8px; color: var(--cyan); }
+    .radial-stage.mobile-orbit .orb-btn:active { background: rgba(212,175,55,0.10); border-radius: 8px; }
 
     /* ── CONNECTOR LINES (SVG overlay over radial-stage) ── */
     #connectorSvg {
@@ -550,7 +554,7 @@ const COMMANDS = [
   { icon:'💰', text:'FINANCIAL',   sub:'Income/expenses', cmd:'financial overview' },
   { icon:'✅', text:'WON',         sub:'Closed deals',    cmd:'read me won leads' },
   { icon:'📅', text:'THIS WEEK',   sub:'Weekly',          cmd:'read me this week leads' },
-  { icon:'👥', text:'CONTRACTORS', sub:'All agents',      cmd:'contractor performance' },
+  { icon:'👥', text:'CONTRACTORS', short:'AGENTS', sub:'All agents',      cmd:'contractor performance' },
   { icon:'🔢', text:'ACTIVE',      sub:'This month',      cmd:'how many contractors this month' },
   { icon:'🚛', text:'STOCK',       sub:'Intake review',   cmd:'__STOCK_REVIEW__' },
   { icon:'👤', text:'BUYER',       sub:'Add buyer',        cmd:'__ADD_BUYER__' },
@@ -568,7 +572,7 @@ function makeOrbBtn(cmd) {
   const btn = document.createElement('button');
   btn.className = 'orb-btn';
   if (cmd.cmd === '__EMAIL__') btn.id = 'emailOrbBtn';
-  btn.innerHTML = `<span class="ob-icon">${cmd.icon}</span><span class="ob-text">${cmd.text}</span><span class="ob-sub">${cmd.sub}</span>`;
+  btn.innerHTML = `<span class="ob-icon">${cmd.icon}</span><span class="ob-text">${(window.innerWidth <= 640 && cmd.short) ? cmd.short : cmd.text}</span><span class="ob-sub">${cmd.sub}</span>`;
   btn.onclick = () => cmd.cmd === '__ADD_BUYER__'    ? openBuyerForm()    :
                       cmd.cmd === '__VIEW_ADS__'     ? openAdsPanel()     :
                       cmd.cmd === '__DIAGNOSTICS__'  ? runDiagnostics()   :
@@ -589,20 +593,15 @@ function buildOrbital() {
   const btnWrap = document.getElementById('orbitalButtons');
   const svg = document.getElementById('connectorSvg');
   const isPhone = window.innerWidth <= 640;
-  stage.classList.toggle('mobile-grid', isPhone);
-  if (isPhone) {
-    svg.innerHTML = '';
-    btnWrap.innerHTML = '';
-    COMMANDS.forEach(cmd => btnWrap.appendChild(makeOrbBtn(cmd)));
-    if (typeof setEmailBadge === 'function' && window._emailBadgeN) setEmailBadge(window._emailBadgeN);
-    return;
-  }
+  stage.classList.toggle('mobile-orbit', isPhone);
   const W = stage.offsetWidth || 400;
   const H = stage.offsetHeight || 400;
   const cx = W/2, cy = H/2;
   const orbEl = document.getElementById('orb');
+  // phones: globe scales with the screen so the words around it never touch it
+  if (orbEl) { const g = isPhone ? Math.round(W * 0.37) + 'px' : ''; orbEl.style.width = g; orbEl.style.height = g; }
   const globeR = (orbEl ? orbEl.offsetWidth : 200) / 2; // actual rendered size
-  const orbitR = Math.min(cx, cy) * 0.82; // radius to button centres
+  const orbitR = Math.min(cx, cy) * (isPhone ? 0.86 : 0.82); // radius to button centres
   const n = COMMANDS.length;
 
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -622,13 +621,15 @@ function buildOrbital() {
 
   COMMANDS.forEach((cmd, i) => {
     const angle = (i / n) * Math.PI * 2 - Math.PI / 2; // start at top
-    const bx = cx + orbitR * Math.cos(angle);
-    const by = cy + orbitR * Math.sin(angle);
+    // phones: every second label sits on a smaller inner ring so the words never touch
+    const rr = (isPhone && i % 2 === 1) ? orbitR * 0.72 : orbitR;
+    const bx = cx + rr * Math.cos(angle);
+    const by = cy + rr * Math.sin(angle);
 
     // Connector line from globe edge to button
     const edgeX = cx + globeR * Math.cos(angle);
     const edgeY = cy + globeR * Math.sin(angle);
-    const btnEdgeR = 48;
+    const btnEdgeR = isPhone ? 20 : 48;
     const btnEdgeX = bx - btnEdgeR * Math.cos(angle);
     const btnEdgeY = by - btnEdgeR * Math.sin(angle);
 
