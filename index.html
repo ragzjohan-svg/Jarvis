@@ -2242,6 +2242,7 @@ function handleCommand(text){
 
 // ── BUYER MATCH VOICE ALERT — polls every 3 minutes ──────────
 function checkBuyerMatchAlerts() {
+  if (!jarvisToken) return;   // not unlocked yet (PIN screen): do not poll the server
   callBackend('getPendingMatches').then(function(data) {
     if (!data || !data.matches || !data.matches.length) return;
     var matches = data.matches;
