@@ -2388,8 +2388,12 @@ function showCopied(adId) {
   if (btn) { btn.textContent = '✅ COPIED'; setTimeout(function(){ btn.textContent = 'COPY'; }, 2000); }
 }
 
-// Check for new ads alert on load and every 3 min
-window.addEventListener('load', function() {
+// Check for new ads once, a few seconds after the PIN is accepted (never before: no token = no server calls)
+function checkNewAdsAlertOnce(tries) {
+  if (!jarvisToken) {                       // still on the PIN screen: wait locally, no server call
+    if ((tries || 0) < 120) setTimeout(function() { checkNewAdsAlertOnce((tries || 0) + 1); }, 5000);
+    return;
+  }
   setTimeout(function() {
     callBackend('getPendingAds').then(function(data) {
       if (data && data.ads && data.ads.length) {
@@ -2403,7 +2407,8 @@ window.addEventListener('load', function() {
       }
     }).catch(function(){});
   }, 8000);
-});
+}
+window.addEventListener('load', function() { checkNewAdsAlertOnce(0); });
 
 // ── BUYER FORM ────────────────────────────────────────────────
 function openBuyerForm() {
