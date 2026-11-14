@@ -2595,7 +2595,89 @@ var IvaGif = (function () {
       setTimeout(step, 0);
     });
   }
-  return { build: build, buildAsync: buildAsync, renderSlides: renderSlides, collage: collage };
+
+  // ================= COLLAGE v2 (proposed design: bigger photos, stronger price, slim footer) =================
+  function profileFor(cat) {
+    var t = String(cat || '').toLowerCase();
+    if (/trailer|superlink|flat ?deck|side ?tipper|lowbed|low bed|tipper trailer|tautliner|reefer|tanker|interlink|dolly/.test(t)) return 'trailer';
+    if (/excavator|loader|dozer|grader|backhoe|tlb|roller|crane|forklift|telehandler|yellow|plant|machine|tractor \(ag|agric|harvester|combine|bobcat|skid/.test(t)) return 'machine';
+    return 'truck';
+  }
+  function isHoursCat(cat) { return /excavator|loader|dozer|grader|backhoe|tlb|roller|crane|forklift|telehandler|yellow|plant|machine|agric|harvester|combine|bobcat|skid/.test(String(cat || '').toLowerCase()); }
+  // best full-vehicle candidate first: landscape, close to 3:2; never a portrait/close-up when a landscape exists
+  function pickOrder(photos) {
+    var sc = photos.map(function (p, i) {
+      var w = p.naturalWidth || p.width, h = p.naturalHeight || p.height, ar = w / h;
+      return { p: p, i: i, s: (ar >= 1.25 ? 2 : 0) + (1 - Math.min(1, Math.abs(ar - 1.5) / 1.5)) - i * 0.15 };
+    });
+    sc.sort(function (a, b) { return b.s - a.s; });
+    return sc.map(function (x) { return x.p; });
+  }
+  // photo into a box without distortion: landscape-ish photos fill the box (small top/bottom trim only);
+  // tall photos are shown whole over a blurred copy of themselves
+  function placePhoto(ctx, img, x, y, w, h, fy) {
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, ir = iw / ih, r = w / h;
+    if (ir >= r * 0.82) { cover(ctx, img, x, y, w, h, fy == null ? 0.55 : fy); return; }
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    try { ctx.filter = 'blur(18px)'; } catch (e) {}
+    cover(ctx, img, x - 30, y - 30, w + 60, h + 60, 0.5); ctx.filter = 'none';
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x, y, w, h);
+    var dh = h, dw = dh * ir; if (dw > w) { dw = w; dh = dw / ir; }
+    ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); ctx.restore();
+  }
+  function collage2(o) {
+    var S = o.size || 1080, c = document.createElement('canvas'); c.width = c.height = S;
+    var ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high';
+    var k = S / 1080, gap = Math.round(6 * k), photos = o.photos.slice(0, 40), total = photos.length;
+    var prof = o.profile || profileFor(o.category);
+    var heroH = Math.round((prof === 'trailer' ? 590 : prof === 'machine' ? 700 : 650) * k), footTop = Math.round(884 * k);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, S, S);
+    var tiles = Math.min(3, total - 1), tileY = heroH + gap, tileH = footTop - gap - tileY;
+    if (tiles < 1) { placePhoto(ctx, photos[0], 0, 0, S, footTop - gap, 0.55); }
+    else {
+      placePhoto(ctx, photos[0], 0, 0, S, heroH, 0.55);
+      var nShow = Math.min(3, tiles), tw = (S - gap * (nShow - 1)) / nShow;
+      for (var i = 0; i < nShow; i++) {
+        var tx = Math.round(i * (tw + gap)), twr = Math.round(tw);
+        placePhoto(ctx, photos[i + 1], tx, tileY, twr, tileH, 0.55);
+        if (i === nShow - 1) {                                    // gallery tile
+          if (total > 4) { ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(tx, tileY, twr, tileH); }
+          var bh = Math.round(66 * k), by = tileY + tileH - bh;
+          ctx.fillStyle = PINK; ctx.fillRect(tx, by, twr, bh);
+          var lab = 'VIEW ALL ' + total + ' PHOTOS';
+          ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitFont(ctx, lab, twr - 64 * k, 36 * k, 14);
+          ctx.fillText(lab, tx + twr / 2 - 10 * k, by + bh / 2 + 2 * k);
+          ctx.beginPath(); var ax = tx + twr - 30 * k, ay = by + bh / 2; ctx.moveTo(ax - 7 * k, ay - 13 * k); ctx.lineTo(ax + 8 * k, ay); ctx.lineTo(ax - 7 * k, ay + 13 * k); ctx.closePath(); ctx.fill();
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        }
+      }
+    }
+    header(ctx, S, logoCanvas(o.logo, Math.round(S * 0.29)));
+    // price: big yellow block on the hero (bottom right) with the VAT wording on a black tab under it
+    if (o.price) {
+      var bx = S - 18 * k, bw = 500 * k, bh2 = 118 * k, tabH = 46 * k, by2 = heroH - 20 * k - tabH;
+      poly(ctx, [[bx - bw, by2 - bh2 + 20 * k], [bx, by2 - bh2], [bx - 8 * k, by2], [bx - bw - 10 * k, by2 + 22 * k]], YELLOW);
+      ctx.fillStyle = BLACK; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; fitFont(ctx, o.price, bw - 60 * k, 100 * k, 24);
+      ctx.fillText(o.price, bx - bw / 2 - 4 * k, by2 - bh2 / 2 + 12 * k);
+      if (o.vat) {
+        poly(ctx, [[bx - bw - 10 * k, by2 + 22 * k], [bx - 8 * k, by2], [bx - 14 * k, by2 + tabH], [bx - bw - 16 * k, by2 + tabH + 22 * k]], BLACK);
+        ctx.fillStyle = YELLOW; fitFont(ctx, o.vat, bw - 80 * k, 32 * k, 14); ctx.fillText(o.vat, bx - bw / 2 - 12 * k, by2 + tabH / 2 + 12 * k);
+      }
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    }
+    // slim footer
+    ctx.fillStyle = PINK; ctx.fillRect(0, footTop, S, Math.round(5 * k));
+    ctx.fillStyle = '#0b0b0d'; ctx.fillRect(0, footTop + Math.round(5 * k), S, S - footTop);
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; fitFont(ctx, o.title, S - 60 * k, 60 * k, 18); ctx.fillText(o.title, 30 * k, footTop + 54 * k);
+    var sub = [o.kms, o.province].filter(Boolean).join('   |   ');
+    ctx.fillStyle = YELLOW; fitFont(ctx, sub, S - 60 * k, 36 * k, 14); ctx.fillText(sub, 30 * k, footTop + 108 * k);
+    var ph = (o.phones || []).map(function (p) { return p.name + ': ' + p.num; }).join('      ');
+    ctx.fillStyle = '#e8e8e8'; fitFont(ctx, ph, S - 60 * k, 30 * k, 12); ctx.fillText(ph, 30 * k, footTop + 160 * k);
+    ctx.textBaseline = 'alphabetic';
+    return c;
+  }
+  return { build: build, buildAsync: buildAsync, renderSlides: renderSlides, collage: collage, collage2: collage2, pickOrder: pickOrder, profileFor: profileFor, isHoursCat: isHoursCat };
 })();
 
 // ── ADS PANEL: final price, collage picture, GIF, gallery link ────────────────
@@ -2627,11 +2709,13 @@ function adBtn(label, js, kind, extra) {
 }
 
 // The ad text with the FINAL price and the gallery link put in
+function adVat(t) { var m = /(EXCL\. VAT|INCL\. VAT|NO VAT)/.exec(String(t || '')); return m ? m[1] : ''; }
+function adKmsLabel(m) { var d = String(m && m.kms || '').replace(/\D/g, ''); if (!d) return ''; return adFmt(d) + (IvaGif.isHoursCat(m.category) ? ' HRS' : ' KM'); }
 function adBuildText(st) {
   var t = String(st.ad.ad || '');
   if (!st.final) return t;
-  var vat = /EXCL\. VAT/.test(t) ? 'EXCL. VAT' : 'NO VAT';
-  t = t.replace(/^[^\n]*R\d[^\n]*(?:EXCL\. VAT|NO VAT)[^\n]*$/m, '💰🔥 R' + adFmt(st.final) + ' ' + vat + ' 🔥💰');
+  var vat = adVat(t);
+  t = t.replace(/^[^\n]*R\d[^\n]*(?:EXCL\. VAT|NO VAT)[^\n]*$/m, '💰🔥 R' + adFmt(st.final) + (vat ? ' ' + vat : '') + ' 🔥💰');
   t = t.replace(/^[^\n]*OWNER'S PRICE[^\n]*\n?/m, '');
   if (st.itemId) {
     t = t.replace(/^📸[^\n]*\n\n?/m, '');
@@ -2797,6 +2881,7 @@ function adStartMedia(i) {
     }
     return Promise.all([worker(), worker(), worker()]).then(function () {
       st.loading = false; st.photos = got.filter(function (p) { return p; });
+      try { var ord = IvaGif.pickOrder(st.photos.map(function (p) { return p.img; })); st.photos.sort(function (a, b) { return ord.indexOf(a.img) - ord.indexOf(b.img); }); } catch (e) {}
       if (!st.photos.length) { box.innerHTML = adNote('The photos could not be loaded. Try again in a moment.', '#e57373'); return; }
       adBuildCollage(i);
     });
@@ -2807,8 +2892,10 @@ function adBuildCollage(i) {
   var st = _adS[i]; if (!st || !st.media) return;
   var used = adUsed(st); if (!used.length) { adRenderMedia(i); return; }
   Promise.all([adLogo(), adFontsReady()]).then(function (r) {
-    var c = IvaGif.collage({ photos: used.map(function (p) { return p.img; }), logo: r[0], size: 1080, title: st.media.title, price: 'R' + adFmt(st.final),
-      kms: adFmtKms(st.media.kms), province: String(st.media.province || '').toUpperCase(), phones: IVA_PHONES });
+    var o = { photos: used.map(function (p) { return p.img; }), logo: r[0], size: 1080, title: st.media.title, category: st.media.category, price: 'R' + adFmt(st.final),
+      vat: adVat(adBuildText(st)), kms: adKmsLabel(st.media), province: String(st.media.province || '').toUpperCase(), phones: IVA_PHONES };
+    if (st.oldLayout) o.kms = adFmtKms(st.media.kms);
+    var c = st.oldLayout ? IvaGif.collage(o) : IvaGif.collage2(o);
     c.toBlob(function (b) {
       if (st.collageUrl) URL.revokeObjectURL(st.collageUrl);
       st.collageBlob = b; st.collageUrl = URL.createObjectURL(b);
@@ -2820,7 +2907,7 @@ function adBuildCollage(i) {
 function adRenderMedia(i) {
   var st = _adS[i], box = document.getElementById('ad-media-' + i); if (!st || !box) return;
   var h = '<div style="padding:12px 14px;background:#0a0a14;border-bottom:1px solid #00d4ff22;">';
-  h += '<div style="color:#00d4ff;font-size:0.72rem;font-weight:700;letter-spacing:1px;margin-bottom:6px;">COLLAGE PICTURE</div>';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><span style="color:#00d4ff;font-size:0.72rem;font-weight:700;letter-spacing:1px;">COLLAGE PICTURE</span>' + adBtn(st.oldLayout ? 'USE NEW LAYOUT' : 'USE OLD LAYOUT', 'adToggleLayout(' + i + ')', 'plain', 'padding:3px 8px;font-size:0.66rem;') + '</div>';
   h += '<img id="ad-collage-' + i + '" src="' + st.collageUrl + '" style="width:100%;border-radius:8px;display:block;">';
   h += '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' + adBtn('SHARE PICTURE', 'adShare(' + i + ',\'collage\')', 'go') + adBtn('SAVE', 'adSave(' + i + ',\'collage\')', 'plain') + '</div>';
   // photo strip
@@ -2845,6 +2932,7 @@ function adRenderMedia(i) {
   var thumbs = box.querySelectorAll('.adThumb');
   thumbs.forEach(function (t) { var p = st.photos[+t.getAttribute('data-k')]; if (p) t.src = p.img.src; });
 }
+function adToggleLayout(i) { var st = _adS[i]; if (!st) return; st.oldLayout = !st.oldLayout; adBuildCollage(i); }
 function adPhotoToggle(i, k) { var st = _adS[i]; if (!st || !st.photos[k]) return; if (st.photos[k].use && adUsed(st).length <= 1) return; st.photos[k].use = !st.photos[k].use; adBuildCollage(i); }
 function adPhotoFirst(i, k) { var st = _adS[i]; if (!st || !st.photos[k]) return; var p = st.photos.splice(k, 1)[0]; p.use = true; st.photos.unshift(p); adBuildCollage(i); }
 
@@ -2855,8 +2943,8 @@ function adMakeGif(i) {
   var slot = document.getElementById('ad-gifst-' + i); if (slot) slot.innerHTML = adNote('Building the GIF…');
   Promise.all([adLogo(), adFontsReady()]).then(function (r) {
     return IvaGif.buildAsync({ photos: adUsed(st).map(function (p) { return p.img; }), logo: r[0], size: 412, title: st.media.title,
-      category: String(st.media.category || 'FOR SALE').toUpperCase(), price: 'R' + adFmt(st.final), kms: adFmtKms(st.media.kms),
-      province: String(st.media.province || '').toUpperCase(), location: String(st.media.province || '').toUpperCase(), phones: IVA_PHONES, maxPhotos: 8 },
+      category: String(st.media.category || 'FOR SALE').toUpperCase(), price: 'R' + adFmt(st.final), kms: adKmsLabel(st.media),
+      province: String(st.media.province || '').toUpperCase(), location: [adVat(adBuildText(st)), String(st.media.province || '').toUpperCase()].filter(Boolean).join('  •  '), phones: IVA_PHONES, maxPhotos: 8 },
       function (n, tot) { var s = document.getElementById('ad-gifst-' + i); if (s) s.innerHTML = adNote('Building the GIF… ' + n + ' / ' + tot); });
   }).then(function (bytes) {
     st.gifBlob = new Blob([bytes], { type: 'image/gif' }); st.gifUrl = URL.createObjectURL(st.gifBlob); st.gifBusy = false; adRenderMedia(i);
