@@ -2284,6 +2284,7 @@ var IvaGif = (function () {
   'use strict';
   var FONT = '"IvaF","Inter","Arial Black",Arial,sans-serif';
   var YELLOW = '#ffd400', PINK = '#ff1f8e', BLACK = '#0b0b0d';
+  var IVA_CONTACT_NOTE = 'CONTACT THE IVA REPRESENTATIVE WHO SENT YOU THIS AD';
 
   // ---------- drawing helpers ----------
   function poly(ctx, pts, fill) {
@@ -2411,6 +2412,11 @@ var IvaGif = (function () {
     if (o.location) { ctx.fillStyle = YELLOW; fitFont(ctx, o.location, 300 * k, 17 * k, 10); ctx.fillText(o.location, S / 2, py + 168 * k); }
     ctx.textAlign = 'left';
     var y = S - 52 * k;
+    if (!(o.phones && o.phones.length)) {
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = YELLOW;
+      ['CONTACT THE IVA REPRESENTATIVE', 'WHO SENT YOU THIS AD'].forEach(function (t, n) { fitFont(ctx, t, S - 50 * k, 22 * k, 11); ctx.fillText(t, S / 2, y + 4 * k + n * 30 * k); });
+      ctx.textAlign = 'left';
+    }
     (o.phones || []).forEach(function (p, idx) {
       var yy = y + idx * 34 * k; ctx.fillStyle = PINK; ctx.beginPath(); ctx.arc(70 * k, yy, 15 * k, 0, 7); ctx.fill(); icon(ctx, 'phone', 70 * k, yy, 10 * k);
       ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; fitFont(ctx, p.name + ': ' + p.num, 250 * k, 22 * k, 11); ctx.fillText(p.name + ': ' + p.num, 94 * k, yy + 1);
@@ -2573,7 +2579,7 @@ var IvaGif = (function () {
     poly(ctx, [[0, f + 136 * k], [S, f + 116 * k], [S, f + 200 * k], [0, f + 220 * k]], PINK);
     var sub = [o.kms, o.province].filter(Boolean).join('   •   ');
     ctx.fillStyle = '#fff'; fitFont(ctx, sub, S - 70 * k, 46 * k, 14); ctx.fillText(sub, 34 * k, f + 172 * k);
-    var ph = (o.phones || []).map(function (p) { return p.name + ': ' + p.num; }).join('     ');
+    var ph = (o.phones && o.phones.length) ? o.phones.map(function (p) { return p.name + ': ' + p.num; }).join('     ') : IVA_CONTACT_NOTE;
     ctx.fillStyle = '#fff'; fitFont(ctx, ph, S - 60 * k, 38 * k, 12); ctx.textAlign = 'center'; ctx.fillText(ph, S / 2, S - 50 * k);
     ctx.fillStyle = YELLOW; fitFont(ctx, 'DO IT THE IVA WAY!', S - 60 * k, 26 * k, 12); ctx.fillText('DO IT THE IVA WAY!', S / 2, S - 14 * k);
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -2672,7 +2678,7 @@ var IvaGif = (function () {
     ctx.fillStyle = '#fff'; fitFont(ctx, o.title, S - 60 * k, 60 * k, 18); ctx.fillText(o.title, 30 * k, footTop + 54 * k);
     var sub = [o.kms, o.province].filter(Boolean).join('   |   ');
     ctx.fillStyle = YELLOW; fitFont(ctx, sub, S - 60 * k, 36 * k, 14); ctx.fillText(sub, 30 * k, footTop + 108 * k);
-    var ph = (o.phones || []).map(function (p) { return p.name + ': ' + p.num; }).join('      ');
+    var ph = (o.phones && o.phones.length) ? o.phones.map(function (p) { return p.name + ': ' + p.num; }).join('      ') : IVA_CONTACT_NOTE;
     ctx.fillStyle = '#e8e8e8'; fitFont(ctx, ph, S - 60 * k, 30 * k, 12); ctx.fillText(ph, 30 * k, footTop + 160 * k);
     ctx.textBaseline = 'alphabetic';
     return c;
@@ -2681,7 +2687,7 @@ var IvaGif = (function () {
 })();
 
 // ── ADS PANEL: final price, collage picture, GIF, gallery link ────────────────
-var IVA_PHONES = [{ name: 'Luanne', num: '071 224 6550' }, { name: 'Johan', num: '074 047 8134' }];
+var IVA_PHONES = [];   // no phone numbers on shared pictures: buyers contact the representative who sent the ad
 var _adS = {};            // state per ad card
 var _adLogoP = null;
 var _adCurrentIndex = 0;
