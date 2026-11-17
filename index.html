@@ -548,6 +548,26 @@
   drawStars();
 })();
 
+// ── KEEP SCREEN ON (laptop/desktop only): the screen stays on while Jarvis is open and visible ──
+var _wl = null, _wlErr = '', _wlWanted = window.innerWidth > 640;
+function wlRequest() {
+  if (!_wlWanted || !('wakeLock' in navigator) || document.visibilityState !== 'visible' || _wl) return;
+  navigator.wakeLock.request('screen').then(function (l) {
+    _wl = l; _wlErr = ''; l.addEventListener('release', function () { _wl = null; });
+  }).catch(function (e) { _wl = null; _wlErr = (e && e.name) || 'error'; });
+}
+function wakeLockCheck() {
+  var n = 'Keep screen on';
+  if (!_wlWanted) return { name: n, status: 'INFO', detail: 'off on phones (saves battery)' };
+  if (!('wakeLock' in navigator)) return { name: n, status: 'WARN', detail: 'this browser cannot do it: set Windows Screen and sleep to Never instead' };
+  if (_wl) return { name: n, status: 'OK', detail: 'active, the screen stays on while Jarvis is open' };
+  return { name: n, status: 'WARN', detail: 'not active' + (_wlErr ? ' (' + _wlErr + ')' : ' yet') + ': click anywhere in Jarvis and run DIAG again' };
+}
+document.addEventListener('visibilitychange', wlRequest);
+window.addEventListener('focus', wlRequest);
+document.addEventListener('click', wlRequest);
+wlRequest();
+
 // ── ORBITAL BUTTONS ──────────────────────────────────────────
 const COMMANDS = [
   { icon:'📊', text:'OVERVIEW',    sub:'Business',        cmd:'give me an overview' },
@@ -3288,7 +3308,7 @@ function runDiagnostics() {
         current.push('  ' + r.name + ': ✗ ' + r.status);
       }
     });
-    var srvChecks = (serverResult && serverResult.success && serverResult.checks) ? serverResult.checks : [];
+    var srvChecks = (serverResult && serverResult.success && serverResult.checks) ? serverResult.checks.slice() : [];
     if (serverResult) {
       current.push('─'.repeat(42));
       current.push('SYSTEM CHECKS');
@@ -3299,6 +3319,9 @@ function runDiagnostics() {
         var icon = c.status === 'OK' ? '✓' : (c.status === 'INFO' ? 'ℹ' : (c.status === 'WARN' ? '⚠' : '✗'));
         current.push('  ' + icon + ' ' + c.name + ': ' + c.detail);
       });
+      var wlc = wakeLockCheck();
+      current.push('  ' + (wlc.status === 'OK' ? '✓' : (wlc.status === 'INFO' ? 'ℹ' : '⚠')) + ' ' + wlc.name + ': ' + wlc.detail);
+      srvChecks.push(wlc);
     }
     if (pending > 0) {
       current.push('  … waiting for ' + pending + ' more');
