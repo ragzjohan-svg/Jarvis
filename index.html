@@ -2147,7 +2147,7 @@ function handleCommand(text){
   var fetches = [
     (needsLeads||needsOverview)       ? (jarvisCachedLeads ? Promise.resolve(jarvisCachedLeads) : fetchWithTimeout('getLeads', 8000))             : Promise.resolve(null),
     (needsContractors||needsOverview) ? (jarvisCachedContractors ? Promise.resolve(jarvisCachedContractors) : fetchWithTimeout('getContractors', 8000)) : Promise.resolve(null),
-    (needsFinancials||needsOverview)  ? fetchWithTimeout('getSummary', 5000)     : Promise.resolve(null),
+    (needsFinancials||needsOverview)  ? fetchWithTimeout('getSummary', 25000)     : Promise.resolve(null),
     (needsStock||needsOverview)       ? fetchWithTimeout('getStock', 8000)        : Promise.resolve(null),
     (needsPending||needsOverview)     ? fetchWithTimeout('getPendingProducts', 5000) : Promise.resolve(null)
   ];
